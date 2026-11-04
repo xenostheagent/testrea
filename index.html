@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f7f6f2">
+    <meta name="description" content="Gather — a home for the things you make and the people you find.">
+    <title>Gather — Make something worth sharing</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="#" data-view="home" aria-label="Gather home">
+        <span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
+        <span>gather<span class="brand-period">.</span></span>
+      </a>
+      <label class="search-box">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input id="search" type="search" placeholder="Search people, ideas, places…" aria-label="Search posts and creators">
+        <kbd>/</kbd>
+      </label>
+      <div class="header-actions">
+        <button class="icon-button notification-button" type="button" aria-label="Notifications" data-toast="Notifications are a demo-only feature right now."><span aria-hidden="true">♧</span><i></i></button>
+        <button class="header-avatar avatar avatar-you" type="button" aria-label="Open your profile" data-view="profile">M</button>
+      </div>
+    </header>
+
+    <div class="app-shell">
+      <aside class="left-rail" aria-label="Main navigation">
+        <div class="rail-section">
+          <p class="rail-label">YOUR SPACE</p>
+          <button class="nav-link active" type="button" data-view="home"><span class="nav-icon">⌂</span>Home</button>
+          <button class="nav-link" type="button" data-view="discover"><span class="nav-icon">⌕</span>Explore</button>
+          <button class="nav-link" type="button" data-view="following"><span class="nav-icon">◉</span>Following</button>
+          <button class="nav-link" type="button" data-view="saved"><span class="nav-icon">♧</span>Saved</button>
+        </div>
+        <div class="rail-divider"></div>
+        <div class="rail-section">
+          <p class="rail-label">YOUR CREW <button class="tiny-add" type="button" data-view="discover" aria-label="Find people">+</button></p>
+          <button class="crew-link" type="button" data-person="Nia Park"><span class="avatar avatar-nia">N</span><span>Nia Park</span><i class="online-dot"></i></button>
+          <button class="crew-link" type="button" data-person="Omar Reyes"><span class="avatar avatar-omar">O</span><span>Omar Reyes</span><i class="online-dot"></i></button>
+          <button class="crew-link" type="button" data-person="June Kim"><span class="avatar avatar-june">J</span><span>June Kim</span></button>
+          <button class="crew-link" type="button" data-person="Ari Flores"><span class="avatar avatar-ari">A</span><span>Ari Flores</span></button>
+        </div>
+        <div class="rail-bottom">
+          <div class="invite-card">
+            <span class="invite-spark" aria-hidden="true">✳</span>
+            <strong>Good things grow together.</strong>
+            <p>Bring a friend into your corner.</p>
+            <button type="button" data-toast="Invites need an account service in a full deployment.">Invite a friend <span aria-hidden="true">↗</span></button>
+          </div>
+          <p class="legal-note">About&nbsp; · &nbsp;Guidelines&nbsp; · &nbsp;Privacy<br>© 2026 Gather</p>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <section class="welcome-row">
+          <div>
+            <p class="eyebrow" id="welcome-date">YOUR SPACE, IN GOOD COMPANY</p>
+            <h1 id="page-title">A little inspiration <span>goes a long way.</span></h1>
+          </div>
+          <button class="create-button" type="button" id="open-composer"><span aria-hidden="true">＋</span> Create post</button>
+        </section>
+        <section class="stories-section" aria-label="People sharing today">
+          <div class="section-heading">
+            <h2>Little moments</h2>
+            <button class="text-button" type="button" data-view="following">See everyone <span aria-hidden="true">→</span></button>
+          </div>
+          <div class="stories-row" id="stories"></div>
+        </section>
+        <section class="feed-section" aria-labelledby="feed-heading">
+          <div class="feed-heading-row">
+            <div><p class="eyebrow">THE GOOD STUFF</p><h2 id="feed-heading">Your feed</h2></div>
+            <div class="feed-filters" role="group" aria-label="Filter feed">
+              <button class="filter-chip selected" type="button" data-filter="all" aria-pressed="true">For you</button>
+              <button class="filter-chip" type="button" data-filter="following" aria-pressed="false">Following</button>
+              <button class="filter-chip" type="button" data-filter="video" aria-pressed="false">Moving</button>
+              <button class="filter-chip" type="button" data-filter="photo" aria-pressed="false">Frames</button>
+            </div>
+          </div>
+          <div class="post-list" id="post-list" aria-live="polite"></div>
+          <div class="empty-state" id="empty-state" hidden>
+            <span aria-hidden="true">✳</span><h3>Nothing here just yet.</h3>
+            <p>Try another view, or be the first to share something.</p>
+            <button class="create-button" type="button" data-open-composer>Make a post</button>
+          </div>
+          <p class="load-more" id="load-more">You're all caught up <span aria-hidden="true">✦</span></p>
+        </section>
+      </main>
+
+      <aside class="right-rail" aria-label="Discover more">
+        <section class="side-card prompt-card">
+          <div class="prompt-top"><span class="prompt-icon" aria-hidden="true">✳</span><span>THIS WEEK'S PROMPT</span></div>
+          <h2>Make room<br>for <em>small joys.</em></h2>
+          <p>Show us a tiny thing that made today better.</p>
+          <button type="button" id="prompt-post">Join the prompt <span aria-hidden="true">↗</span></button>
+          <div class="prompt-decoration" aria-hidden="true">✿</div>
+        </section>
+        <section class="discover-panel">
+          <div class="section-heading"><h2>Finding a rhythm</h2><button class="dots-button" type="button" data-toast="More discovery options">···</button></div>
+          <button class="topic-row" type="button" data-search="#slowmorning"><span class="topic-number">01</span><span><strong>#slowmorning</strong><small>Little rituals, big reset</small></span><span class="topic-arrow">↗</span></button>
+          <button class="topic-row" type="button" data-search="#makerdays"><span class="topic-number">02</span><span><strong>#makerdays</strong><small>Things made by hand</small></span><span class="topic-arrow">↗</span></button>
+          <button class="topic-row" type="button" data-search="#outsidehours"><span class="topic-number">03</span><span><strong>#outsidehours</strong><small>A little more sky</small></span><span class="topic-arrow">↗</span></button>
+        </section>
+        <section class="side-card people-card">
+          <div class="section-heading"><h2>People to know</h2><button class="text-button" type="button" data-view="discover">More</button></div>
+          <div id="suggested-people"></div>
+        </section>
+        <p class="right-footer">Take what inspires you. Leave the rest.</p>
+      </aside>
+    </div>
+
+    <nav class="mobile-nav" aria-label="Mobile navigation">
+      <button class="mobile-nav-link active" type="button" data-view="home" aria-label="Home"><span>⌂</span><small>Home</small></button>
+      <button class="mobile-nav-link" type="button" data-view="discover" aria-label="Explore"><span>⌕</span><small>Explore</small></button>
+      <button class="mobile-create" type="button" data-open-composer aria-label="Create a post">＋</button>
+      <button class="mobile-nav-link" type="button" data-view="saved" aria-label="Saved"><span>♧</span><small>Saved</small></button>
+      <button class="mobile-nav-link" type="button" data-view="profile" aria-label="Profile"><span class="avatar avatar-you">M</span><small>You</small></button>
+    </nav>
+
+    <dialog class="composer-dialog" id="composer" aria-labelledby="composer-title">
+      <form class="composer-form" id="composer-form">
+        <div class="dialog-heading"><div><p class="eyebrow">MAKE SOMETHING</p><h2 id="composer-title">Share a moment</h2></div><button class="close-button" type="button" data-close-dialog aria-label="Close">×</button></div>
+        <div class="composer-author"><span class="avatar avatar-you">M</span><span><strong>Mira Chen</strong><small>Sharing with everyone</small></span></div>
+        <label class="visually-hidden" for="post-caption">Write a caption</label>
+        <textarea id="post-caption" name="caption" rows="4" maxlength="500" placeholder="What are you making, noticing, or learning?" required></textarea>
+        <div class="upload-preview" id="upload-preview" hidden></div>
+        <div class="composer-bottom">
+          <label class="upload-button" for="post-file"><span aria-hidden="true">▧</span> Add a photo or video</label>
+          <input class="visually-hidden" id="post-file" type="file" accept="image/*,video/*">
+          <span class="character-count" id="character-count">0 / 500</span>
+        </div>
+        <div class="composer-actions"><button class="cancel-button" type="button" data-close-dialog>Not now</button><button class="publish-button" id="publish-button" type="submit">Share post <span aria-hidden="true">↗</span></button></div>
+      </form>
+    </dialog>
+    <dialog class="story-dialog" id="story-dialog" aria-label="Moment viewer"><div class="story-viewer" id="story-viewer"></div><button class="story-close" type="button" data-close-dialog aria-label="Close moment">×</button></dialog>
+    <div class="toast-region" id="toast-region" aria-live="polite" aria-atomic="true"></div>
+  </body>
+</html>
