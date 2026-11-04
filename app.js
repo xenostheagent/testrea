@@ -1,20 +1,26 @@
-const POSTS_KEY = "gather.posts.v1";
-const FOLLOWING_KEY = "gather.following.v1";
-const MEDIA_DB = "gather-media";
+const POSTS_KEY = "obvault.posts.v1";
+const ACCOUNTS_KEY = "obvault.accounts.v1";
+const SESSION_KEY = "obvault.demo-session.v1";
+const MEDIA_DB = "obvault-media";
 const MEDIA_STORE = "attachments";
-const me = { name: "Mira Chen", handle: "@miramakes", initials: "M", avatar: "avatar-you" };
+const DEMO_ACCOUNTS = [
+  { name: "Nia Park", email: "nia.park@oberlin.edu", handle: "@niapark", password: "OberlinDemo1!", initials: "N", avatar: "avatar-nia" },
+  { name: "Omar Reyes", email: "omar.reyes@oberlin.edu", handle: "@omaroutside", password: "OberlinDemo2!", initials: "O", avatar: "avatar-omar" },
+  { name: "June Kim", email: "june.kim@oberlin.edu", handle: "@junekim", password: "OberlinDemo3!", initials: "J", avatar: "avatar-june" },
+  { name: "Ari Flores", email: "ari.flores@oberlin.edu", handle: "@ariflores", password: "OberlinDemo4!", initials: "A", avatar: "avatar-ari" }
+];
 const people = [
-  { name: "Nia Park", handle: "@niapark", initials: "N", avatar: "avatar-nia", bio: "Slow mornings & ceramics", following: true },
-  { name: "Omar Reyes", handle: "@omaroutside", initials: "O", avatar: "avatar-omar", bio: "Taking the long way home", following: true },
-  { name: "June Kim", handle: "@junekim", initials: "J", avatar: "avatar-june", bio: "A small studio in the city", following: false },
-  { name: "Ari Flores", handle: "@ariflores", initials: "A", avatar: "avatar-ari", bio: "Making things, growing things", following: false }
+  { ...DEMO_ACCOUNTS[0], bio: "Slow mornings & ceramics", following: true },
+  { ...DEMO_ACCOUNTS[1], bio: "Taking the long way home", following: true },
+  { ...DEMO_ACCOUNTS[2], bio: "A small studio in the city", following: false },
+  { ...DEMO_ACCOUNTS[3], bio: "Making things, growing things", following: false }
 ];
 const now = Date.now();
 const starterPosts = [
-  { id: "seed-1", author: "Nia Park", handle: "@niapark", initials: "N", avatar: "avatar-nia", createdAt: now - 36e5 * 2, kind: "photo", scene: "garden", caption: "The first tomatoes finally showed up. I think we both needed a little sun today. #slowmorning #growingthings", likes: 128, liked: false, saved: false, comments: [{ author: "Omar Reyes", text: "Look at those little guys!", id: "c1" }] },
-  { id: "seed-2", author: "Omar Reyes", handle: "@omaroutside", initials: "O", avatar: "avatar-omar", createdAt: now - 36e5 * 5, kind: "video", scene: "coast", caption: "Took the path that doesn't have a name. Turns out it had a pretty good ending. #outsidehours", likes: 86, liked: false, saved: false, comments: [] },
-  { id: "seed-3", author: "June Kim", handle: "@junekim", initials: "J", avatar: "avatar-june", createdAt: now - 36e5 * 19, kind: "photo", scene: "studio", caption: "A few seconds before the kiln opens. Holding my breath, as usual. #makerdays #madebyhand", likes: 204, liked: false, saved: false, comments: [{ author: "Nia Park", text: "Fingers crossed! 🌱", id: "c2" }, { author: "Ari Flores", text: "The colors are lovely.", id: "c3" }] },
-  { id: "seed-4", author: "Ari Flores", handle: "@ariflores", initials: "A", avatar: "avatar-ari", createdAt: now - 36e5 * 25, kind: "text", scene: "note", caption: "Reminder from my walk: you don't have to turn every quiet thing into something productive. #littlejoys", likes: 64, liked: false, saved: false, comments: [] }
+  { id: "seed-1", author: "Nia Park", authorEmail: "nia.park@oberlin.edu", handle: "@niapark", initials: "N", avatar: "avatar-nia", createdAt: now - 36e5 * 2, kind: "photo", scene: "garden", caption: "The first tomatoes finally showed up. I think we both needed a little sun today. #slowmorning #growingthings", likes: 128, likedBy: [], comments: [{ author: "Omar Reyes", text: "Look at those little guys!", id: "c1" }] },
+  { id: "seed-2", author: "Omar Reyes", authorEmail: "omar.reyes@oberlin.edu", handle: "@omaroutside", initials: "O", avatar: "avatar-omar", createdAt: now - 36e5 * 5, kind: "video", scene: "coast", caption: "Took the path that doesn't have a name. Turns out it had a pretty good ending. #outsidehours", likes: 86, likedBy: [], comments: [] },
+  { id: "seed-3", author: "June Kim", authorEmail: "june.kim@oberlin.edu", handle: "@junekim", initials: "J", avatar: "avatar-june", createdAt: now - 36e5 * 19, kind: "photo", scene: "studio", caption: "A few seconds before the kiln opens. Holding my breath, as usual. #makerdays #madebyhand", likes: 204, likedBy: [], comments: [{ author: "Nia Park", text: "Fingers crossed! 🌱", id: "c2" }, { author: "Ari Flores", text: "The colors are lovely.", id: "c3" }] },
+  { id: "seed-4", author: "Ari Flores", authorEmail: "ari.flores@oberlin.edu", handle: "@ariflores", initials: "A", avatar: "avatar-ari", createdAt: now - 36e5 * 25, kind: "text", scene: "note", caption: "Reminder from my walk: you don't have to turn every quiet thing into something productive. #littlejoys", likes: 64, likedBy: [], comments: [] }
 ];
 const stories = [
   { ...people[0], scene: "garden", note: "tiny things growing" },
@@ -36,6 +42,9 @@ const storyDialog = document.querySelector("#story-dialog");
 const storyViewer = document.querySelector("#story-viewer");
 const searchInput = document.querySelector("#search");
 const mediaUrls = new Map();
+const authScreen = document.querySelector("#auth-screen");
+const loginForm = document.querySelector("#login-form");
+const registerForm = document.querySelector("#register-form");
 let activeView = "home";
 let activeFilter = "all";
 let query = "";
@@ -43,7 +52,181 @@ let selectedFile = null;
 let previewUrl = null;
 let toastTimer = null;
 let posts = loadJson(POSTS_KEY, starterPosts);
-let following = loadJson(FOLLOWING_KEY, people.filter((person) => person.following).map((person) => person.handle));
+let following = [];
+let interactions = { likedIds: [], savedIds: [] };
+let currentUser = null;
+
+function isOberlinEmail(email) {
+  return /^[^\s@]+@oberlin\.edu$/i.test(email.trim());
+}
+
+function normalizeEmail(email) {
+  return email.trim().toLowerCase();
+}
+
+function profileKey(email) {
+  return `obvault.profile.${encodeURIComponent(email)}`;
+}
+
+async function passwordDigest(password, salt) {
+  if (!crypto?.subtle) throw new Error("Secure password hashing isn't available in this browser.");
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 210000 }, key, 256);
+  return [...new Uint8Array(bits)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function bytesToHex(bytes) {
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function constantTimeEqual(left, right) {
+  if (left.length !== right.length) return false;
+  let mismatch = 0;
+  for (let index = 0; index < left.length; index += 1) mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  return mismatch === 0;
+}
+
+function publicAccount(account) {
+  const { passwordHash, passwordSalt, ...publicFields } = account;
+  return publicFields;
+}
+
+class DemoAuthProvider {
+  async listAccounts() {
+    return loadJson(ACCOUNTS_KEY, []);
+  }
+
+  async saveAccounts(accounts) {
+    if (!persist(ACCOUNTS_KEY, accounts)) throw new Error("Couldn't save this account in local browser storage.");
+  }
+
+  async seed() {
+    const accounts = await this.listAccounts();
+    let changed = false;
+    for (const demo of DEMO_ACCOUNTS) {
+      if (accounts.some((account) => account.email === demo.email)) continue;
+      const passwordSalt = crypto.getRandomValues(new Uint8Array(16));
+      accounts.push({
+        name: demo.name, email: demo.email, handle: demo.handle, initials: demo.initials, avatar: demo.avatar,
+        passwordSalt: bytesToHex(passwordSalt),
+        passwordHash: await passwordDigest(demo.password, passwordSalt)
+      });
+      changed = true;
+    }
+    if (changed) await this.saveAccounts(accounts);
+  }
+
+  async register({ name, email, password }) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!isOberlinEmail(normalizedEmail)) throw new Error("Use a valid @oberlin.edu email address.");
+    if (password.length < 8) throw new Error("Choose a password with at least 8 characters.");
+    const accounts = await this.listAccounts();
+    if (accounts.some((account) => account.email === normalizedEmail)) throw new Error("An account already exists for that email.");
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const account = {
+      name: name.trim(), email: normalizedEmail,
+      handle: `@${normalizedEmail.split("@")[0].replace(/[^a-z0-9_]/g, "")}`,
+      initials: name.trim().charAt(0).toUpperCase(), avatar: "avatar-you",
+      passwordSalt: bytesToHex(salt), passwordHash: await passwordDigest(password, salt)
+    };
+    if (!account.name) throw new Error("Enter a display name.");
+    accounts.push(account);
+    await this.saveAccounts(accounts);
+    localStorage.setItem(SESSION_KEY, account.email);
+    return { user: publicAccount(account), verificationRequired: false };
+  }
+
+  async login(email, password) {
+    const normalizedEmail = normalizeEmail(email);
+    if (!isOberlinEmail(normalizedEmail)) throw new Error("Only @oberlin.edu accounts can log in.");
+    const account = (await this.listAccounts()).find((item) => item.email === normalizedEmail);
+    if (!account) throw new Error("Email or password is incorrect.");
+    const digest = await passwordDigest(password, Uint8Array.from(account.passwordSalt.match(/.{2}/g), (byte) => Number.parseInt(byte, 16)));
+    if (!constantTimeEqual(digest, account.passwordHash)) throw new Error("Email or password is incorrect.");
+    localStorage.setItem(SESSION_KEY, account.email);
+    return publicAccount(account);
+  }
+
+  async current() {
+    const email = normalizeEmail(localStorage.getItem(SESSION_KEY) || "");
+    if (!email) return null;
+    const account = (await this.listAccounts()).find((item) => item.email === email);
+    return account ? publicAccount(account) : null;
+  }
+
+  async logout() {
+    localStorage.removeItem(SESSION_KEY);
+  }
+}
+
+class HttpAuthProvider {
+  constructor(baseUrl) {
+    this.baseUrl = baseUrl.replace(/\/+$/, "");
+    this.csrfToken = null;
+  }
+
+  async ensureCsrfToken() {
+    if (this.csrfToken) return this.csrfToken;
+    const response = await fetch(`${this.baseUrl}/auth/csrf`, { credentials: "include" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || typeof result.token !== "string" || !result.token) {
+      throw new Error("Couldn't initialize secure account access.");
+    }
+    this.csrfToken = result.token;
+    return this.csrfToken;
+  }
+
+  async request(path, body) {
+    const headers = {};
+    if (body) {
+      headers["Content-Type"] = "application/json";
+      headers["X-CSRF-Token"] = await this.ensureCsrfToken();
+    }
+    const response = await fetch(`${this.baseUrl}/auth/${path}`, {
+      method: body ? "POST" : "GET",
+      credentials: "include",
+      headers,
+      body: body ? JSON.stringify(body) : undefined
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(result.message || "Account request failed.");
+      error.status = response.status;
+      throw error;
+    }
+    return result;
+  }
+
+  async register(details) {
+    if (!isOberlinEmail(details.email)) throw new Error("Use a valid @oberlin.edu email address.");
+    return this.request("register", details);
+  }
+
+  async login(email, password) {
+    if (!isOberlinEmail(email)) throw new Error("Only @oberlin.edu accounts can log in.");
+    const result = await this.request("login", { email: normalizeEmail(email), password });
+    if (!result.user || result.user.emailVerified !== true) throw new Error("Verify your Oberlin email before logging in.");
+    return result.user;
+  }
+
+  async current() {
+    try {
+      const user = (await this.request("session")).user;
+      return user?.emailVerified === true ? user : null;
+    }
+    catch (error) {
+      if (error.status === 401) return null;
+      throw error;
+    }
+  }
+
+  async logout() {
+    await this.request("logout", {});
+  }
+}
+
+const authApiUrl = document.querySelector('meta[name="obvault-auth-api"]')?.content.trim();
+const authProvider = authApiUrl ? new HttpAuthProvider(authApiUrl) : new DemoAuthProvider();
 
 function loadJson(key, fallback) {
   try {
@@ -134,6 +317,98 @@ function savePosts() {
   return persist(POSTS_KEY, posts);
 }
 
+function saveProfile() {
+  if (!currentUser) return;
+  persist(profileKey(currentUser.email), { following, ...interactions });
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes < 0) return "File";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function mediaKind(fileName, type) {
+  const name = fileName.toLowerCase();
+  if (type.startsWith("video/") || /\.(mp4|mov|webm|m4v|ogv|avi|mkv)$/i.test(name)) return "video";
+  if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|avif|bmp|tiff?)$/i.test(name)) return "image";
+  if (type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  return "file";
+}
+
+function showAuthError(form, message) {
+  const error = document.querySelector(`#${form.id === "login-form" ? "login-error" : "register-error"}`);
+  error.textContent = message;
+  error.hidden = false;
+}
+
+function hideAuthError(form) {
+  const error = document.querySelector(`#${form.id === "login-form" ? "login-error" : "register-error"}`);
+  error.hidden = true;
+  error.textContent = "";
+}
+
+function setAuthMode(mode) {
+  const isLogin = mode === "login";
+  loginForm.hidden = !isLogin;
+  registerForm.hidden = isLogin;
+  document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
+    const selected = tab.dataset.authMode === mode;
+    tab.classList.toggle("active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+  });
+  document.querySelector(isLogin ? "#login-email" : "#register-name").focus();
+}
+
+async function enterApp(user) {
+  if (!user || !isOberlinEmail(user.email)) {
+    throw new Error("Only an @oberlin.edu account can access ObVault.");
+  }
+  if (authProvider instanceof HttpAuthProvider && user.emailVerified !== true) {
+    throw new Error("Verify your Oberlin email before accessing ObVault.");
+  }
+  currentUser = { ...user, email: normalizeEmail(user.email) };
+  const profile = loadJson(profileKey(currentUser.email), {});
+  following = Array.isArray(profile.following) ? profile.following : [];
+  interactions = {
+    likedIds: Array.isArray(profile.likedIds) ? profile.likedIds : [],
+    savedIds: Array.isArray(profile.savedIds) ? profile.savedIds : []
+  };
+  authScreen.hidden = true;
+  document.body.classList.add("is-authenticated");
+  document.querySelectorAll(".avatar-you").forEach((avatar) => { avatar.textContent = currentUser.initials || currentUser.name[0]; });
+  document.querySelector(".composer-author strong").textContent = currentUser.name;
+  document.querySelector(".composer-author small").textContent = currentUser.email;
+  document.querySelector(".header-avatar").setAttribute("aria-label", `Open ${currentUser.name}'s profile`);
+  document.querySelector("#welcome-date").textContent = `SIGNED IN AS ${currentUser.email.toUpperCase()}`;
+  renderStories();
+  render();
+  await loadSavedMedia();
+}
+
+function leaveApp() {
+  currentUser = null;
+  document.body.classList.remove("is-authenticated");
+  authScreen.hidden = false;
+  closeDialogs();
+  setAuthMode("login");
+  loginForm.reset();
+  registerForm.reset();
+  setTimeout(() => document.querySelector("#login-email").focus(), 0);
+}
+
+function renderDemoAccountButtons() {
+  const container = document.querySelector("#demo-account-list");
+  if (!container) return;
+  container.innerHTML = DEMO_ACCOUNTS.map((account) => `
+    <button class="demo-account" type="button" data-demo-login="${escapeHtml(account.email)}">
+      <span class="avatar ${escapeHtml(account.avatar)}">${escapeHtml(account.initials)}</span>
+      <span><strong>${escapeHtml(account.name)}</strong><small>${escapeHtml(account.email)}</small></span>
+      <span class="demo-enter">↗</span>
+    </button>`).join("");
+}
+
 function timeAgo(timestamp) {
   const minutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes < 60) return `${minutes}m`;
@@ -148,10 +423,17 @@ function formatCaption(text) {
 
 function getMedia(post) {
   if (mediaUrls.has(post.id)) {
-    const source = mediaUrls.get(post.id);
-    return post.kind === "video"
-      ? `<video class="uploaded-media" src="${source}" controls preload="metadata" aria-label="Video posted by ${escapeHtml(post.author)}"></video>`
-      : `<img class="uploaded-media" src="${source}" alt="Photo posted by ${escapeHtml(post.author)}">`;
+    const media = mediaUrls.get(post.id);
+    if (media.kind === "video") {
+      return `<video class="uploaded-media" src="${media.url}" controls preload="metadata" aria-label="Video posted by ${escapeHtml(post.author)}"></video>`;
+    }
+    if (media.kind === "image") {
+      return `<img class="uploaded-media" src="${media.url}" alt="${escapeHtml(media.name)}">`;
+    }
+    if (media.kind === "pdf") {
+      return `<div class="pdf-frame"><iframe sandbox title="PDF preview: ${escapeHtml(media.name)}" src="${media.url}"></iframe><a href="${media.url}" download="${escapeHtml(media.name)}">Download PDF</a></div>`;
+    }
+    return `<div class="attachment-tile"><span class="attachment-icon">↧</span><div><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.type || "File")} · ${formatFileSize(media.size)}</small></div><a href="${media.url}" download="${escapeHtml(media.name)}">Download</a></div>`;
   }
   if (post.attachmentId) {
     return `<div class="media-unavailable">This upload isn't available in this browser.</div>`;
@@ -168,7 +450,9 @@ function getMedia(post) {
 
 function renderPost(post) {
   const comments = Array.isArray(post.comments) ? post.comments : [];
-  const ownPost = post.handle === me.handle;
+  const ownPost = post.authorEmail === currentUser.email;
+  const liked = interactions.likedIds.includes(post.id);
+  const saved = interactions.savedIds.includes(post.id);
   const tags = [...new Set(post.caption.match(/#[a-zA-Z0-9_]+/g) || [])];
   return `<article class="post-card" data-post-id="${escapeHtml(post.id)}">
     <header class="post-author-row">
@@ -181,14 +465,14 @@ function renderPost(post) {
       <p class="post-caption">${formatCaption(post.caption)}</p>
       ${tags.length ? `<div class="post-tags">${tags.map((tag) => `<button type="button" data-search="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}</div>` : ""}
       <div class="post-actions">
-        <button class="post-action like-action ${post.liked ? "is-liked" : ""}" type="button" data-action="like" data-id="${escapeHtml(post.id)}" aria-pressed="${Boolean(post.liked)}" aria-label="${post.liked ? "Unlike" : "Like"} post"><span aria-hidden="true">${post.liked ? "♥" : "♡"}</span><span>${Number(post.likes) || 0}</span></button>
+        <button class="post-action like-action ${liked ? "is-liked" : ""}" type="button" data-action="like" data-id="${escapeHtml(post.id)}" aria-pressed="${liked}" aria-label="${liked ? "Unlike" : "Like"} post"><span aria-hidden="true">${liked ? "♥" : "♡"}</span><span>${(Number(post.likes) || 0) + (liked ? 1 : 0)}</span></button>
         <button class="post-action" type="button" data-action="comments" data-id="${escapeHtml(post.id)}" aria-expanded="false"><span aria-hidden="true">◯</span><span>${comments.length}</span></button>
         <button class="post-action share-action" type="button" data-action="share" data-id="${escapeHtml(post.id)}"><span aria-hidden="true">↗</span><span>Share</span></button>
-        <button class="post-action save-action ${post.saved ? "is-saved" : ""}" type="button" data-action="save" data-id="${escapeHtml(post.id)}" aria-pressed="${Boolean(post.saved)}" aria-label="${post.saved ? "Remove from saved" : "Save post"}"><span aria-hidden="true">${post.saved ? "◆" : "◇"}</span></button>
+        <button class="post-action save-action ${saved ? "is-saved" : ""}" type="button" data-action="save" data-id="${escapeHtml(post.id)}" aria-pressed="${saved}" aria-label="${saved ? "Remove from saved" : "Save post"}"><span aria-hidden="true">${saved ? "◆" : "◇"}</span></button>
       </div>
       <div class="comment-thread" data-comments-for="${escapeHtml(post.id)}" hidden>
         <div class="comment-list">${comments.map((comment) => `<p><strong>${escapeHtml(comment.author)}</strong> ${escapeHtml(comment.text)}</p>`).join("")}</div>
-        <form class="comment-form" data-comment-form="${escapeHtml(post.id)}"><span class="avatar avatar-you">M</span><label class="visually-hidden" for="comment-${escapeHtml(post.id)}">Write a comment</label><input id="comment-${escapeHtml(post.id)}" name="comment" maxlength="240" placeholder="Add a kind thought…" required><button type="submit" aria-label="Send comment">↗</button></form>
+        <form class="comment-form" data-comment-form="${escapeHtml(post.id)}"><span class="avatar avatar-you">${escapeHtml(currentUser.initials)}</span><label class="visually-hidden" for="comment-${escapeHtml(post.id)}">Write a comment</label><input id="comment-${escapeHtml(post.id)}" name="comment" maxlength="240" placeholder="Add a kind thought…" required><button type="submit" aria-label="Send comment">↗</button></form>
       </div>
     </div>
   </article>`;
@@ -202,11 +486,11 @@ function matchesSearch(post, value) {
 
 function filteredPosts() {
   let visible = posts;
-  if (activeView === "saved") visible = visible.filter((post) => post.saved);
+  if (activeView === "saved") visible = visible.filter((post) => interactions.savedIds.includes(post.id));
   if (activeView === "following" || activeFilter === "following") {
-    visible = visible.filter((post) => post.handle === me.handle || following.includes(post.handle));
+    visible = visible.filter((post) => post.authorEmail === currentUser.email || following.includes(post.handle));
   }
-  if (activeView === "profile") visible = visible.filter((post) => post.handle === me.handle);
+  if (activeView === "profile") visible = visible.filter((post) => post.authorEmail === currentUser.email);
   if (activeFilter === "video") visible = visible.filter((post) => post.kind === "video");
   if (activeFilter === "photo") visible = visible.filter((post) => post.kind === "photo");
   return visible.filter((post) => matchesSearch(post, query));
@@ -235,6 +519,7 @@ function updateHeader() {
 }
 
 function render() {
+  if (!currentUser) return;
   updateHeader();
   const visible = filteredPosts();
   postList.innerHTML = visible.map(renderPost).join("");
@@ -312,6 +597,29 @@ document.addEventListener("click", async (event) => {
     render();
   }
 
+  const authTab = event.target.closest("[data-auth-mode]");
+  if (authTab) setAuthMode(authTab.dataset.authMode);
+
+  const demoLogin = event.target.closest("[data-demo-login]");
+  if (demoLogin) {
+    const account = DEMO_ACCOUNTS.find((item) => item.email === demoLogin.dataset.demoLogin);
+    if (!account) return;
+    try {
+      await enterApp(await authProvider.login(account.email, account.password));
+    } catch (error) {
+      showAuthError(loginForm, error instanceof Error ? error.message : "Couldn't open this demo account.");
+    }
+  }
+
+  if (event.target.closest("#logout")) {
+    try {
+      await authProvider.logout();
+      leaveApp();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Couldn't log out.");
+    }
+  }
+
   const toastButton = event.target.closest("[data-toast]");
   if (toastButton) showToast(toastButton.dataset.toast);
 
@@ -364,19 +672,26 @@ document.addEventListener("click", async (event) => {
   if (action.dataset.action === "follow") {
     const handle = action.dataset.handle;
     following = following.includes(handle) ? following.filter((item) => item !== handle) : [...following, handle];
-    persist(FOLLOWING_KEY, following);
+    saveProfile();
     render();
     return;
   }
   if (!post) return;
   if (action.dataset.action === "like") {
-    post.liked = !post.liked;
-    post.likes = Math.max(0, (Number(post.likes) || 0) + (post.liked ? 1 : -1));
-    saveAndRender();
+    const liked = interactions.likedIds.includes(post.id);
+    interactions.likedIds = liked
+      ? interactions.likedIds.filter((id) => id !== post.id)
+      : [...interactions.likedIds, post.id];
+    saveProfile();
+    render();
   } else if (action.dataset.action === "save") {
-    post.saved = !post.saved;
-    saveAndRender();
-    showToast(post.saved ? "Saved to your collection." : "Removed from your collection.");
+    const saved = interactions.savedIds.includes(post.id);
+    interactions.savedIds = saved
+      ? interactions.savedIds.filter((id) => id !== post.id)
+      : [...interactions.savedIds, post.id];
+    saveProfile();
+    render();
+    showToast(saved ? "Removed from your collection." : "Saved to your collection.");
   } else if (action.dataset.action === "comments") {
     const thread = postList.querySelector(`[data-comments-for="${CSS.escape(post.id)}"]`);
     thread.hidden = !thread.hidden;
@@ -398,17 +713,19 @@ document.addEventListener("click", async (event) => {
     } else {
       showToast("Share link: " + shareUrl);
     }
-  } else if (action.dataset.action === "delete" && post.handle === me.handle) {
+  } else if (action.dataset.action === "delete" && post.authorEmail === currentUser.email) {
     posts = posts.filter((item) => item.id !== post.id);
     if (post.attachmentId) {
       try { await removeAttachment(post.attachmentId); }
       catch { showToast("Post removed, but its local media couldn't be cleared."); }
     }
+    const media = mediaUrls.get(post.id);
+    if (media) URL.revokeObjectURL(media.url);
     mediaUrls.delete(post.id);
     saveAndRender();
     showToast("Your post was removed.");
   } else if (action.dataset.action === "more") {
-    showToast("Thanks for helping keep Gather thoughtful.");
+    showToast("Thanks for helping keep ObVault thoughtful.");
   }
 });
 
@@ -420,7 +737,7 @@ postList.addEventListener("submit", (event) => {
   const input = form.elements.comment;
   const text = input.value.trim();
   if (!post || !text) return;
-  post.comments.push({ id: crypto.randomUUID(), author: me.name, text });
+  post.comments.push({ id: crypto.randomUUID(), author: currentUser.name, authorEmail: currentUser.email, text });
   saveAndRender();
   const thread = postList.querySelector(`[data-comments-for="${CSS.escape(post.id)}"]`);
   thread.hidden = false;
@@ -431,6 +748,51 @@ searchInput.addEventListener("input", () => {
   query = searchInput.value;
   if (query && activeView === "home") activeView = "discover";
   render();
+});
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  hideAuthError(loginForm);
+  const submit = loginForm.querySelector(".auth-submit");
+  submit.disabled = true;
+  try {
+    const user = await authProvider.login(loginForm.elements.namedItem("email").value, loginForm.elements.namedItem("password").value);
+    await enterApp(user);
+  } catch (error) {
+    showAuthError(loginForm, error instanceof Error ? error.message : "Couldn't log in.");
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+registerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  hideAuthError(registerForm);
+  const status = document.querySelector("#register-status");
+  status.hidden = true;
+  status.textContent = "";
+  const submit = registerForm.querySelector(".auth-submit");
+  submit.disabled = true;
+  try {
+    const result = await authProvider.register({
+      name: registerForm.elements.namedItem("name").value,
+      email: registerForm.elements.namedItem("email").value,
+      password: registerForm.elements.namedItem("password").value
+    });
+    if (result.verificationRequired) {
+      status.textContent = "Check your Oberlin inbox to verify your address before logging in.";
+      status.hidden = false;
+      registerForm.reset();
+      return;
+    }
+    const user = result.user || await authProvider.current();
+    if (!user) throw new Error("Account was created, but no signed-in session was returned. Log in to continue.");
+    await enterApp(user);
+  } catch (error) {
+    showAuthError(registerForm, error instanceof Error ? error.message : "Couldn't create your account.");
+  } finally {
+    submit.disabled = false;
+  }
 });
 
 document.addEventListener("keydown", (event) => {
@@ -454,22 +816,38 @@ captionInput.addEventListener("input", () => {
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
   if (!file) return;
-  if (!file.type.startsWith("image/") && !file.type.startsWith("video/")) {
-    showToast("Choose an image or video file.");
-    fileInput.value = "";
-    return;
-  }
-  if (file.size > 40 * 1024 * 1024) {
-    showToast("Choose a file smaller than 40 MB.");
+  if (file.size > 100 * 1024 * 1024) {
+    showToast("Choose a file smaller than 100 MB for this local demo.");
     fileInput.value = "";
     return;
   }
   clearPreview();
   selectedFile = file;
   previewUrl = URL.createObjectURL(file);
-  uploadPreview.innerHTML = file.type.startsWith("video/")
-    ? `<video src="${previewUrl}" controls muted></video>`
-    : `<img src="${previewUrl}" alt="Selected upload preview">`;
+  uploadPreview.replaceChildren();
+  const kind = mediaKind(file.name, file.type);
+  if (kind === "video") {
+    const video = document.createElement("video");
+    video.src = previewUrl;
+    video.controls = true;
+    video.muted = true;
+    uploadPreview.append(video);
+  } else if (kind === "image") {
+    const image = document.createElement("img");
+    image.src = previewUrl;
+    image.alt = "Selected upload preview";
+    uploadPreview.append(image);
+  } else if (kind === "pdf") {
+    const frame = document.createElement("iframe");
+    frame.src = previewUrl;
+    frame.title = `PDF preview: ${file.name}`;
+    frame.setAttribute("sandbox", "");
+    uploadPreview.append(frame);
+  } else {
+    const details = document.createElement("p");
+    details.textContent = `${file.name} · ${file.type || "File"} · ${formatFileSize(file.size)}`;
+    uploadPreview.append(details);
+  }
   uploadPreview.hidden = false;
 });
 
@@ -484,21 +862,25 @@ composerForm.addEventListener("submit", async (event) => {
   publishButton.textContent = "Sharing…";
   const id = crypto.randomUUID();
   const attachmentId = selectedFile ? id : null;
+  const file = selectedFile;
   try {
-    if (selectedFile) await writeAttachment(id, selectedFile);
-    const post = {
-      id, author: me.name, handle: me.handle, initials: me.initials, avatar: me.avatar,
-      createdAt: Date.now(), kind: selectedFile ? (selectedFile.type.startsWith("video/") ? "video" : "photo") : "text",
-      scene: "garden", caption, likes: 0, liked: false, saved: false, comments: [],
-      attachmentId
-    };
-    posts.unshift(post);
-    if (!savePosts()) {
-      posts.shift();
-      if (attachmentId) await removeAttachment(attachmentId);
-      return;
-    }
-    if (selectedFile) mediaUrls.set(id, previewUrl);
+  if (file) await writeAttachment(id, file);
+  const post = {
+    id, author: currentUser.name, authorEmail: currentUser.email, handle: currentUser.handle,
+    initials: currentUser.initials || currentUser.name[0], avatar: currentUser.avatar || "avatar-you",
+    createdAt: Date.now(), kind: file ? (mediaKind(file.name, file.type) === "video" ? "video" : mediaKind(file.name, file.type) === "image" ? "photo" : "file") : "text",
+    scene: "garden", caption, likes: 0, liked: false, saved: false, comments: [],
+    attachmentId, fileName: file?.name, fileType: file?.type, fileSize: file?.size
+  };
+  posts.unshift(post);
+  if (!savePosts()) {
+    posts.shift();
+    if (attachmentId) await removeAttachment(attachmentId);
+    return;
+  }
+  if (file) mediaUrls.set(id, {
+    url: previewUrl, type: file.type || "application/octet-stream", kind: mediaKind(file.name, file.type), name: file.name, size: file.size
+  });
     previewUrl = null;
     selectedFile = null;
     composer.close();
@@ -521,7 +903,15 @@ async function loadSavedMedia() {
   for (const post of saved) {
     try {
       const file = await readAttachment(post.attachmentId);
-      if (file) mediaUrls.set(post.id, URL.createObjectURL(file));
+      if (file) {
+        mediaUrls.set(post.id, {
+          url: URL.createObjectURL(file),
+          type: file.type || post.fileType || "application/octet-stream",
+          kind: mediaKind(post.fileName || "", file.type || post.fileType || ""),
+          name: post.fileName || "Download attachment",
+          size: file.size
+        });
+      }
     } catch (error) {
       showToast(error instanceof Error ? error.message : "A saved upload couldn't be loaded.");
       break;
@@ -531,5 +921,23 @@ async function loadSavedMedia() {
 }
 
 renderStories();
-render();
-loadSavedMedia();
+if (authProvider instanceof DemoAuthProvider) {
+  renderDemoAccountButtons();
+} else {
+  document.querySelector(".demo-access").hidden = true;
+  document.querySelector(".auth-footnote").textContent =
+    "Sign-up requires a verified Oberlin inbox. Passwords and sessions are handled by your configured authentication service.";
+}
+
+async function initializeAuth() {
+  try {
+    if (authProvider instanceof DemoAuthProvider) await authProvider.seed();
+    const user = await authProvider.current();
+    if (user) await enterApp(user);
+    else setAuthMode("login");
+  } catch (error) {
+    showAuthError(loginForm, error instanceof Error ? error.message : "Could not initialize account access.");
+  }
+}
+
+initializeAuth();

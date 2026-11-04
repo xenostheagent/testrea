@@ -3,17 +3,67 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f7f6f2">
-    <meta name="description" content="Gather — a home for the things you make and the people you find.">
-    <title>Gather — Make something worth sharing</title>
+    <meta name="theme-color" content="#141313">
+    <meta name="description" content="ObVault — a space for art, experiments, and work in progress.">
+    <meta name="obvault-auth-api" content="">
+    <title>ObVault — Make room for art</title>
     <link rel="stylesheet" href="styles.css">
     <script src="app.js" defer></script>
   </head>
   <body>
+    <section class="auth-screen" id="auth-screen">
+      <section class="auth-panel" aria-labelledby="auth-title">
+        <a class="brand auth-brand" href="#" aria-label="ObVault home">
+          <span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
+          <span>OBVAULT<span class="brand-period">.</span></span>
+        </a>
+        <p class="auth-kicker">OBERLIN MAKES THINGS</p>
+        <h1 id="auth-title">A place for<br>work <em>in progress.</em></h1>
+        <p class="auth-description">Share the finished thing, the messy middle, and everything you make along the way.</p>
+        <div class="auth-tabs" role="tablist" aria-label="Account options">
+          <button class="auth-tab active" type="button" role="tab" id="login-tab" aria-selected="true" aria-controls="login-form" data-auth-mode="login">Log in</button>
+          <button class="auth-tab" type="button" role="tab" id="register-tab" aria-selected="false" aria-controls="register-form" data-auth-mode="register">Create account</button>
+        </div>
+        <form class="auth-form" id="login-form" autocomplete="on">
+          <label for="login-email">Oberlin email</label>
+          <input id="login-email" name="email" type="email" autocomplete="username" placeholder="you@oberlin.edu" required>
+          <label for="login-password">Password</label>
+          <input id="login-password" name="password" type="password" autocomplete="current-password" minlength="8" required>
+          <p class="auth-error" id="login-error" role="alert" hidden></p>
+          <button class="auth-submit" type="submit">Log in <span aria-hidden="true">↗</span></button>
+        </form>
+        <form class="auth-form" id="register-form" autocomplete="on" hidden>
+          <label for="register-name">Display name</label>
+          <input id="register-name" name="name" autocomplete="name" maxlength="48" placeholder="What should we call you?" required>
+          <label for="register-email">Oberlin email</label>
+          <input id="register-email" name="email" type="email" autocomplete="email" placeholder="you@oberlin.edu" required>
+          <p class="field-note">An <strong>@oberlin.edu</strong> address is required.</p>
+          <label for="register-password">Password <span>8+ characters</span></label>
+          <input id="register-password" name="password" type="password" autocomplete="new-password" minlength="8" required>
+          <p class="auth-error" id="register-error" role="alert" hidden></p>
+          <p class="auth-status" id="register-status" role="status" hidden></p>
+          <button class="auth-submit" type="submit">Make my account <span aria-hidden="true">↗</span></button>
+        </form>
+        <div class="demo-access">
+          <p class="demo-label"><span></span> LOCAL DEMO ACCOUNTS</p>
+          <p>Pick a demo profile or create your own account to try the prototype.</p>
+          <div class="demo-account-list" id="demo-account-list"></div>
+        </div>
+        <p class="auth-footnote">Demo mode stores accounts on this device only. Sign-up checks the email domain, but does not verify mailbox ownership.</p>
+      </section>
+      <aside class="auth-art" aria-label="An original abstract artwork">
+        <div class="art-label"><span>OBVAULT FIELD NOTES</span><span>NO. 001 / 2026</span></div>
+        <div class="art-orbit orbit-one"></div><div class="art-orbit orbit-two"></div>
+        <div class="art-block block-one"></div><div class="art-block block-two"></div>
+        <div class="art-red-mark"></div>
+        <div class="art-caption"><span>STUDIES IN</span><strong>becoming</strong><span>ART, IDEAS & OTHER THINGS IN MOTION</span></div>
+        <div class="art-index"><span>OBERLIN, OH</span><span>41°17' N&nbsp; 82°13' W</span></div>
+      </aside>
+    </section>
     <header class="site-header">
-      <a class="brand" href="#" data-view="home" aria-label="Gather home">
+      <a class="brand" href="#" data-view="home" aria-label="ObVault home">
         <span class="brand-symbol" aria-hidden="true"><span></span><span></span><span></span></span>
-        <span>gather<span class="brand-period">.</span></span>
+        <span>OBVAULT<span class="brand-period">.</span></span>
       </a>
       <label class="search-box">
         <span class="search-icon" aria-hidden="true">⌕</span>
@@ -23,13 +73,14 @@
       <div class="header-actions">
         <button class="icon-button notification-button" type="button" aria-label="Notifications" data-toast="Notifications are a demo-only feature right now."><span aria-hidden="true">♧</span><i></i></button>
         <button class="header-avatar avatar avatar-you" type="button" aria-label="Open your profile" data-view="profile">M</button>
+        <button class="logout-button" id="logout" type="button">Log out</button>
       </div>
     </header>
 
     <div class="app-shell">
       <aside class="left-rail" aria-label="Main navigation">
         <div class="rail-section">
-          <p class="rail-label">YOUR SPACE</p>
+          <p class="rail-label">THE VAULT</p>
           <button class="nav-link active" type="button" data-view="home"><span class="nav-icon">⌂</span>Home</button>
           <button class="nav-link" type="button" data-view="discover"><span class="nav-icon">⌕</span>Explore</button>
           <button class="nav-link" type="button" data-view="following"><span class="nav-icon">◉</span>Following</button>
@@ -37,7 +88,7 @@
         </div>
         <div class="rail-divider"></div>
         <div class="rail-section">
-          <p class="rail-label">YOUR CREW <button class="tiny-add" type="button" data-view="discover" aria-label="Find people">+</button></p>
+          <p class="rail-label">MAKERS <button class="tiny-add" type="button" data-view="discover" aria-label="Find people">+</button></p>
           <button class="crew-link" type="button" data-person="Nia Park"><span class="avatar avatar-nia">N</span><span>Nia Park</span><i class="online-dot"></i></button>
           <button class="crew-link" type="button" data-person="Omar Reyes"><span class="avatar avatar-omar">O</span><span>Omar Reyes</span><i class="online-dot"></i></button>
           <button class="crew-link" type="button" data-person="June Kim"><span class="avatar avatar-june">J</span><span>June Kim</span></button>
@@ -46,21 +97,21 @@
         <div class="rail-bottom">
           <div class="invite-card">
             <span class="invite-spark" aria-hidden="true">✳</span>
-            <strong>Good things grow together.</strong>
-            <p>Bring a friend into your corner.</p>
-            <button type="button" data-toast="Invites need an account service in a full deployment.">Invite a friend <span aria-hidden="true">↗</span></button>
+            <strong>Keep making room.</strong>
+            <p>Good work deserves good company.</p>
+            <button type="button" data-toast="Invites need a server account service.">Invite a maker <span aria-hidden="true">↗</span></button>
           </div>
-          <p class="legal-note">About&nbsp; · &nbsp;Guidelines&nbsp; · &nbsp;Privacy<br>© 2026 Gather</p>
+          <p class="legal-note">About&nbsp; · &nbsp;Guidelines&nbsp; · &nbsp;Privacy<br>© 2026 ObVault</p>
         </div>
       </aside>
 
       <main class="main-content">
         <section class="welcome-row">
           <div>
-            <p class="eyebrow" id="welcome-date">YOUR SPACE, IN GOOD COMPANY</p>
+            <p class="eyebrow" id="welcome-date">OBERLIN, IN GOOD COMPANY</p>
             <h1 id="page-title">A little inspiration <span>goes a long way.</span></h1>
           </div>
-          <button class="create-button" type="button" id="open-composer"><span aria-hidden="true">＋</span> Create post</button>
+          <button class="create-button" type="button" id="open-composer"><span aria-hidden="true">＋</span> Share your art</button>
         </section>
         <section class="stories-section" aria-label="People sharing today">
           <div class="section-heading">
@@ -122,13 +173,13 @@
     <dialog class="composer-dialog" id="composer" aria-labelledby="composer-title">
       <form class="composer-form" id="composer-form">
         <div class="dialog-heading"><div><p class="eyebrow">MAKE SOMETHING</p><h2 id="composer-title">Share a moment</h2></div><button class="close-button" type="button" data-close-dialog aria-label="Close">×</button></div>
-        <div class="composer-author"><span class="avatar avatar-you">M</span><span><strong>Mira Chen</strong><small>Sharing with everyone</small></span></div>
+        <div class="composer-author"><span class="avatar avatar-you">M</span><span><strong>Artist</strong><small>Sharing with everyone</small></span></div>
         <label class="visually-hidden" for="post-caption">Write a caption</label>
         <textarea id="post-caption" name="caption" rows="4" maxlength="500" placeholder="What are you making, noticing, or learning?" required></textarea>
         <div class="upload-preview" id="upload-preview" hidden></div>
         <div class="composer-bottom">
-          <label class="upload-button" for="post-file"><span aria-hidden="true">▧</span> Add a photo or video</label>
-          <input class="visually-hidden" id="post-file" type="file" accept="image/*,video/*">
+          <label class="upload-button" for="post-file"><span aria-hidden="true">▧</span> Add any file</label>
+          <input class="visually-hidden" id="post-file" type="file">
           <span class="character-count" id="character-count">0 / 500</span>
         </div>
         <div class="composer-actions"><button class="cancel-button" type="button" data-close-dialog>Not now</button><button class="publish-button" id="publish-button" type="submit">Share post <span aria-hidden="true">↗</span></button></div>
