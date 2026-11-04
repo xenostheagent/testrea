@@ -772,6 +772,7 @@ html[data-theme] .app-shell { padding-bottom: 112px; }
 html[data-theme] .left-rail {
   position: fixed;
   z-index: 20;
+  top: auto;
   right: 0;
   bottom: 0;
   left: 0;
