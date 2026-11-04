@@ -1,4 +1,5 @@
 const POSTS_KEY = "obvault.posts.v1";
+const CALLS_KEY = "obvault.calls.v1";
 const ACCOUNTS_KEY = "obvault.accounts.v1";
 const SESSION_KEY = "obvault.demo-session.v1";
 const THEME_KEY = "obvault.theme.v1";
@@ -31,6 +32,7 @@ const stories = [
 ];
 
 const postList = document.querySelector("#post-list");
+const callsList = document.querySelector("#calls-list");
 const emptyState = document.querySelector("#empty-state");
 const composer = document.querySelector("#composer");
 const composerForm = document.querySelector("#composer-form");
@@ -53,14 +55,15 @@ let selectedFile = null;
 let previewUrl = null;
 let toastTimer = null;
 let posts = loadJson(POSTS_KEY, starterPosts);
+let calls = loadJson(CALLS_KEY, []);
 let following = [];
 let interactions = { likedIds: [], savedIds: [] };
 let currentUser = null;
-let currentTheme = "dark";
+let currentTheme = "light";
 try {
-  currentTheme = localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+  currentTheme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
 } catch {
-  currentTheme = "dark";
+  currentTheme = "light";
 }
 
 function setTheme(theme) {
@@ -482,7 +485,10 @@ function renderPost(post) {
     <header class="post-author-row">
       <span class="avatar ${escapeHtml(post.avatar || "avatar-you")}">${escapeHtml(post.initials || post.author[0])}</span>
       <div class="author-details"><strong>${escapeHtml(post.author)}</strong><span>${escapeHtml(post.handle)} <i>·</i> ${timeAgo(post.createdAt)}</span></div>
-      <button class="post-menu" type="button" data-action="${ownPost ? "delete" : "more"}" data-id="${escapeHtml(post.id)}" aria-label="${ownPost ? "Delete post" : "More post options"}">${ownPost ? "···" : "···"}</button>
+      <div class="post-options">
+        <button class="post-menu" type="button" data-action="more" data-id="${escapeHtml(post.id)}" aria-label="More post options" aria-expanded="false">···</button>
+        ${ownPost ? `<div class="post-options-menu" hidden><button type="button" data-action="delete" data-id="${escapeHtml(post.id)}">Delete post</button></div>` : ""}
+      </div>
     </header>
     ${post.kind === "text" ? "" : `<div class="post-media">${getMedia(post)}</div>`}
     <div class="post-content">
@@ -509,12 +515,19 @@ function matchesSearch(post, value) {
 }
 
 function filteredPosts() {
-  let visible = posts;
+  let visible = activeView === "archive"
+    ? [...posts].sort((a, b) => a.createdAt - b.createdAt)
+    : posts;
   if (activeView === "saved") visible = visible.filter((post) => interactions.savedIds.includes(post.id));
   if (activeView === "following" || activeFilter === "following") {
     visible = visible.filter((post) => post.authorEmail === currentUser.email || following.includes(post.handle));
   }
   if (activeView === "profile") visible = visible.filter((post) => post.authorEmail === currentUser.email);
+  if (activeView === "archive" && query.trim()) {
+    const term = query.trim().toLowerCase();
+    visible = visible.filter((post) => `${post.caption} ${post.author} ${post.fileName || ""} ${post.handle}`.toLowerCase().includes(term));
+  }
+  if (activeView === "calls") return [];
   if (activeFilter === "video") visible = visible.filter((post) => post.kind === "video");
   if (activeFilter === "photo") visible = visible.filter((post) => post.kind === "photo");
   return visible.filter((post) => matchesSearch(post, query));
@@ -522,11 +535,13 @@ function filteredPosts() {
 
 function updateHeader() {
   const titles = {
-    home: ["YOUR SPACE, IN GOOD COMPANY", "A little inspiration <span>goes a long way.</span>", "Your feed"],
+    home: ["", "For you", "Feed"],
+    archive: ["THE WORK STAYS HERE", "The ObVault <span>archive.</span>", "Past projects"],
+    calls: ["OPEN INVITATIONS · OBERLIN", "Make something <span>with someone.</span>", "Project calls"],
     discover: ["A WORLD OF GOOD IDEAS", "Find something <span>that moves you.</span>", "Explore"],
     following: ["THE PEOPLE YOU PICKED", "Your corner of <span>the community.</span>", "Following"],
     saved: ["KEEP WHAT YOU LOVE", "Your collection <span>of good things.</span>", "Saved"],
-    profile: ["YOUR LITTLE CORNER", "Made and gathered <span>by you.</span>", "Your posts"]
+    profile: ["YOUR LITTLE CORNER", "Made and gathered <span>by you.</span>", "Your projects"]
   };
   const [eyebrow, title, heading] = titles[activeView] || titles.home;
   document.querySelector("#welcome-date").textContent = eyebrow;
@@ -545,16 +560,52 @@ function updateHeader() {
 function render() {
   if (!currentUser) return;
   updateHeader();
+  const isHome = activeView === "home";
+  const isArchive = activeView === "archive";
+  const isCalls = activeView === "calls";
+  document.querySelector("#landing-hero").hidden = true;
+  document.querySelector("#stories-section").hidden = true;
+  document.querySelector("#welcome-row").hidden = isHome || isCalls;
+  document.querySelector("#right-rail").hidden = true;
+  document.querySelector("#feed-filters").hidden = isArchive || isCalls;
+  document.querySelector("#archive-tools").hidden = !isArchive;
+  document.querySelector("#post-list").hidden = isCalls;
+  callsList.hidden = !isCalls;
+  document.querySelector("#empty-state").hidden = isCalls || filteredPosts().length > 0;
+  document.querySelector("#load-more").hidden = isCalls || filteredPosts().length === 0;
+  document.querySelector("#open-call-form").hidden = !isCalls;
+  document.querySelector("#open-home-composer").hidden = !isHome;
+  document.querySelector(".feed-heading-row .eyebrow").textContent = isArchive ? "A RECORD OF MAKING" : isCalls ? "COLLABORATION BOARD" : "THE GOOD STUFF";
+  document.querySelector("#empty-state h3").textContent = isArchive ? "The archive is waiting." : "Nothing here just yet.";
+  document.querySelector("#empty-state p").textContent = isArchive ? "Try another search. Every project leaves a trace." : "Try another view, or be the first to share something.";
+  document.querySelector("#archive-search").value = isArchive ? query : "";
   const visible = filteredPosts();
   postList.innerHTML = visible.map(renderPost).join("");
-  emptyState.hidden = visible.length > 0;
-  document.querySelector("#load-more").hidden = visible.length === 0;
+  emptyState.hidden = isCalls || visible.length > 0;
+  if (isCalls) renderCalls();
   document.querySelectorAll(".filter-chip").forEach((button) => {
     const selected = button.dataset.filter === activeFilter;
     button.classList.toggle("selected", selected);
     button.setAttribute("aria-pressed", String(selected));
   });
   renderSuggestions();
+}
+
+function renderCalls() {
+  const visible = calls
+    .filter((call) => `${call.title} ${call.role} ${call.description} ${call.type} ${call.author}`.toLowerCase().includes(query.trim().toLowerCase()))
+    .sort((a, b) => b.createdAt - a.createdAt);
+  callsList.innerHTML = visible.map((call) => {
+    const mine = call.authorEmail === currentUser.email;
+    return `<article class="call-card">
+      <div class="call-index"><span>OPEN CALL</span><strong>${escapeHtml(call.type.toUpperCase())}</strong><time>${timeAgo(call.createdAt)}</time></div>
+      <div class="call-body"><p class="eyebrow">${escapeHtml(call.author)} · ${escapeHtml(call.authorEmail)}</p><h3>${escapeHtml(call.title)}</h3><p class="call-role">LOOKING FOR <strong>${escapeHtml(call.role)}</strong></p><p class="call-description">${escapeHtml(call.description)}</p><a class="call-contact" href="mailto:${encodeURIComponent(call.contact)}?subject=${encodeURIComponent(`ObVault: ${call.title}`)}">GET IN TOUCH <span aria-hidden="true">↗</span></a></div>
+      ${mine ? `<button class="call-delete" type="button" data-delete-call="${escapeHtml(call.id)}">REMOVE LISTING</button>` : ""}
+    </article>`;
+  }).join("");
+  document.querySelector("#empty-state").hidden = visible.length > 0;
+  document.querySelector("#empty-state h3").textContent = "No open calls right now.";
+  document.querySelector("#empty-state p").textContent = "Post a project and find the people you need.";
 }
 
 function renderStories() {
@@ -597,6 +648,8 @@ function clearPreview() {
 function closeDialogs() {
   if (composer.open) composer.close();
   if (storyDialog.open) storyDialog.close();
+  const callDialog = document.querySelector("#call-dialog");
+  if (callDialog.open) callDialog.close();
 }
 
 function openStory(index) {
@@ -618,6 +671,8 @@ document.addEventListener("click", async (event) => {
     event.preventDefault();
     activeView = viewButton.dataset.view;
     activeFilter = "all";
+    query = "";
+    searchInput.value = "";
     render();
   }
 
@@ -629,6 +684,21 @@ document.addEventListener("click", async (event) => {
   }
 
   if (event.target.closest("#hero-create")) openComposer();
+
+  if (event.target.closest("#open-call-form")) {
+    document.querySelector("#call-error").hidden = true;
+    document.querySelector("#call-form").reset();
+    document.querySelector("#call-contact").value = currentUser.email;
+    document.querySelector("#call-dialog").showModal();
+  }
+
+  const deleteCall = event.target.closest("[data-delete-call]");
+  if (deleteCall) {
+    const call = calls.find((item) => item.id === deleteCall.dataset.deleteCall);
+    if (!call || call.authorEmail !== currentUser.email) return;
+    calls = calls.filter((item) => item.id !== call.id);
+    if (persist(CALLS_KEY, calls)) render();
+  }
 
   const demoLogin = event.target.closest("[data-demo-login]");
   if (demoLogin) {
@@ -664,7 +734,16 @@ document.addEventListener("click", async (event) => {
   }
 
   const openButton = event.target.closest("#open-composer, [data-open-composer]");
-  if (openButton) openComposer();
+  if (openButton) {
+    if (activeView === "calls") {
+      document.querySelector("#call-error").hidden = true;
+      document.querySelector("#call-form").reset();
+      document.querySelector("#call-contact").value = currentUser.email;
+      document.querySelector("#call-dialog").showModal();
+    } else {
+      openComposer();
+    }
+  }
 
   if (event.target.closest("[data-close-dialog]")) closeDialogs();
 
@@ -744,6 +823,7 @@ document.addEventListener("click", async (event) => {
       showToast("Share link: " + shareUrl);
     }
   } else if (action.dataset.action === "delete" && post.authorEmail === currentUser.email) {
+    if (!window.confirm("Delete this post? This can't be undone.")) return;
     posts = posts.filter((item) => item.id !== post.id);
     if (post.attachmentId) {
       try { await removeAttachment(post.attachmentId); }
@@ -755,7 +835,14 @@ document.addEventListener("click", async (event) => {
     saveAndRender();
     showToast("Your post was removed.");
   } else if (action.dataset.action === "more") {
-    showToast("Thanks for helping keep ObVault thoughtful.");
+    const options = action.closest(".post-options");
+    const menu = options.querySelector(".post-options-menu");
+    if (menu) {
+      menu.hidden = !menu.hidden;
+      action.setAttribute("aria-expanded", String(!menu.hidden));
+    } else {
+      showToast("Thanks for helping keep ObVault thoughtful.");
+    }
   }
 });
 
@@ -778,6 +865,53 @@ searchInput.addEventListener("input", () => {
   query = searchInput.value;
   if (query && activeView === "home") activeView = "discover";
   render();
+});
+
+document.querySelector("#archive-search").addEventListener("input", (event) => {
+  query = event.target.value;
+  render();
+});
+
+document.querySelector("#call-form").addEventListener("submit", (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#call-error");
+  error.hidden = true;
+  const contact = normalizeEmail(form.elements.namedItem("contact").value);
+  if (!isOberlinEmail(contact)) {
+    error.textContent = "Use an @oberlin.edu contact address.";
+    error.hidden = false;
+    return;
+  }
+  const listing = {
+    id: crypto.randomUUID(),
+    author: currentUser.name,
+    authorEmail: currentUser.email,
+    title: form.elements.namedItem("title").value.trim(),
+    role: form.elements.namedItem("role").value.trim(),
+    description: form.elements.namedItem("description").value.trim(),
+    type: form.elements.namedItem("type").value,
+    contact,
+    createdAt: Date.now()
+  };
+  if (!listing.title || !listing.role || !listing.description) {
+    error.textContent = "Fill in the title, role, and project description.";
+    error.hidden = false;
+    return;
+  }
+  calls.unshift(listing);
+  if (!persist(CALLS_KEY, calls)) {
+    calls.shift();
+    error.textContent = "Couldn't save this listing in local browser storage.";
+    error.hidden = false;
+    return;
+  }
+  document.querySelector("#call-dialog").close();
+  activeView = "calls";
+  query = "";
+  searchInput.value = "";
+  render();
+  showToast("Your project call is posted.");
 });
 
 loginForm.addEventListener("submit", async (event) => {

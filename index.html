@@ -72,7 +72,6 @@
         <kbd>/</kbd>
       </label>
       <div class="header-actions">
-        <button class="icon-button notification-button" type="button" aria-label="Notifications" data-toast="Notifications are a demo-only feature right now."><span aria-hidden="true">♧</span><i></i></button>
         <button class="theme-toggle app-theme-toggle" type="button" data-theme-toggle aria-label="Switch to light mode"><span class="theme-glyph" aria-hidden="true">☼</span><span class="theme-label">LIGHT</span></button>
         <button class="header-avatar avatar avatar-you" type="button" aria-label="Open your profile" data-view="profile">M</button>
         <button class="logout-button" id="logout" type="button">Log out</button>
@@ -82,8 +81,10 @@
     <div class="app-shell">
       <aside class="left-rail" aria-label="Main navigation">
         <div class="rail-section">
-          <p class="rail-label">THE VAULT</p>
+          <p class="rail-label">THE INDEX</p>
           <button class="nav-link active" type="button" data-view="home"><span class="nav-icon">⌂</span>Home</button>
+          <button class="nav-link" type="button" data-view="archive"><span class="nav-icon">▤</span>Archive</button>
+          <button class="nav-link" type="button" data-view="calls"><span class="nav-icon">＋</span>Project calls</button>
           <button class="nav-link" type="button" data-view="discover"><span class="nav-icon">⌕</span>Explore</button>
           <button class="nav-link" type="button" data-view="following"><span class="nav-icon">◉</span>Following</button>
           <button class="nav-link" type="button" data-view="saved"><span class="nav-icon">♧</span>Saved</button>
@@ -108,7 +109,7 @@
       </aside>
 
       <main class="main-content">
-        <section class="landing-hero" aria-labelledby="landing-title">
+        <section class="landing-hero" id="landing-hero" aria-labelledby="landing-title">
           <div class="hero-meta"><span>OBERLIN, OHIO</span><span>THE CREATIVE STUDENT INDEX · 2026</span></div>
           <div class="hero-copy">
             <p class="hero-overline"><span class="red-dash"></span> A COMMUNITY FOR MAKING</p>
@@ -126,14 +127,14 @@
           </div>
           <div class="hero-foot"><span>SCROLL FOR THE GOOD STUFF</span><span>↓</span><span>NO. 001—026</span></div>
         </section>
-        <section class="welcome-row">
+        <section class="welcome-row" id="welcome-row">
           <div>
             <p class="eyebrow" id="welcome-date">OBERLIN, IN GOOD COMPANY</p>
             <h1 id="page-title">A little inspiration <span>goes a long way.</span></h1>
           </div>
           <button class="create-button" type="button" id="open-composer"><span aria-hidden="true">＋</span> Share your art</button>
         </section>
-        <section class="stories-section" aria-label="People sharing today">
+        <section class="stories-section" id="stories-section" aria-label="People sharing today">
           <div class="section-heading">
             <h2>Little moments</h2>
             <button class="text-button" type="button" data-view="following">See everyone <span aria-hidden="true">→</span></button>
@@ -143,14 +144,24 @@
         <section class="feed-section" aria-labelledby="feed-heading">
           <div class="feed-heading-row">
             <div><p class="eyebrow">THE GOOD STUFF</p><h2 id="feed-heading">Your feed</h2></div>
-            <div class="feed-filters" role="group" aria-label="Filter feed">
+            <div class="feed-tools">
+              <button class="home-create-button" id="open-home-composer" type="button" data-open-composer hidden>Share a moment <span aria-hidden="true">＋</span></button>
+              <button class="call-create-button" id="open-call-form" type="button">+ POST A CALL</button>
+              <div class="feed-filters" id="feed-filters" role="group" aria-label="Filter feed">
               <button class="filter-chip selected" type="button" data-filter="all" aria-pressed="true">For you</button>
               <button class="filter-chip" type="button" data-filter="following" aria-pressed="false">Following</button>
               <button class="filter-chip" type="button" data-filter="video" aria-pressed="false">Moving</button>
               <button class="filter-chip" type="button" data-filter="photo" aria-pressed="false">Frames</button>
+              </div>
             </div>
           </div>
+          <div class="archive-tools" id="archive-tools" hidden>
+            <label for="archive-search">FIND A PROJECT</label>
+            <input id="archive-search" type="search" placeholder="Title, maker, or medium…">
+            <span>THE WORK STAYS HERE.</span>
+          </div>
           <div class="post-list" id="post-list" aria-live="polite"></div>
+          <div class="calls-list" id="calls-list" aria-live="polite" hidden></div>
           <div class="empty-state" id="empty-state" hidden>
             <span aria-hidden="true">✳</span><h3>Nothing here just yet.</h3>
             <p>Try another view, or be the first to share something.</p>
@@ -160,7 +171,7 @@
         </section>
       </main>
 
-      <aside class="right-rail" aria-label="Discover more">
+      <aside class="right-rail" id="right-rail" aria-label="Discover more">
         <section class="side-card prompt-card">
           <div class="prompt-top"><span class="prompt-icon" aria-hidden="true">✳</span><span>THIS WEEK'S PROMPT</span></div>
           <h2>Make room<br>for <em>happy accidents.</em></h2>
@@ -184,9 +195,9 @@
 
     <nav class="mobile-nav" aria-label="Mobile navigation">
       <button class="mobile-nav-link active" type="button" data-view="home" aria-label="Home"><span>⌂</span><small>Home</small></button>
-      <button class="mobile-nav-link" type="button" data-view="discover" aria-label="Explore"><span>⌕</span><small>Explore</small></button>
+      <button class="mobile-nav-link" type="button" data-view="archive" aria-label="Archive"><span>▤</span><small>Archive</small></button>
+      <button class="mobile-nav-link" type="button" data-view="calls" aria-label="Project calls"><span>＋</span><small>Calls</small></button>
       <button class="mobile-create" type="button" data-open-composer aria-label="Create a post">＋</button>
-      <button class="mobile-nav-link" type="button" data-view="saved" aria-label="Saved"><span>♧</span><small>Saved</small></button>
       <button class="mobile-nav-link" type="button" data-view="profile" aria-label="Profile"><span class="avatar avatar-you">M</span><small>You</small></button>
     </nav>
 
@@ -203,6 +214,18 @@
           <span class="character-count" id="character-count">0 / 500</span>
         </div>
         <div class="composer-actions"><button class="cancel-button" type="button" data-close-dialog>Not now</button><button class="publish-button" id="publish-button" type="submit">Share post <span aria-hidden="true">↗</span></button></div>
+      </form>
+    </dialog>
+    <dialog class="call-dialog" id="call-dialog" aria-labelledby="call-title">
+      <form class="call-form" id="call-form">
+        <div class="dialog-heading"><div><p class="eyebrow">OPEN PROJECT CALL</p><h2 id="call-title">Find your people.</h2></div><button class="close-button" type="button" data-close-dialog aria-label="Close">×</button></div>
+        <label for="call-name">Project title</label><input id="call-name" name="title" maxlength="90" placeholder="A short name for the project" required>
+        <label for="call-role">Who are you looking for?</label><input id="call-role" name="role" maxlength="100" placeholder="Actors, musicians, set builders…" required>
+        <label for="call-description">Tell us about it</label><textarea id="call-description" name="description" rows="4" maxlength="700" placeholder="What are you making, and who should join?" required></textarea>
+        <div class="call-form-row"><div><label for="call-type">Project type</label><select id="call-type" name="type"><option>Theatre</option><option>Film</option><option>Music</option><option>Visual art</option><option>Dance</option><option>Writing</option><option>Other</option></select></div><div><label for="call-contact">Contact</label><input id="call-contact" name="contact" type="email" placeholder="you@oberlin.edu" required></div></div>
+        <p class="field-note">Listings are visible to signed-in ObVault demo users on this device.</p>
+        <p class="auth-error" id="call-error" role="alert" hidden></p>
+        <div class="composer-actions"><button class="cancel-button" type="button" data-close-dialog>Not now</button><button class="publish-button" type="submit">Post the call <span aria-hidden="true">↗</span></button></div>
       </form>
     </dialog>
     <dialog class="story-dialog" id="story-dialog" aria-label="Moment viewer"><div class="story-viewer" id="story-viewer"></div><button class="story-close" type="button" data-close-dialog aria-label="Close moment">×</button></dialog>
