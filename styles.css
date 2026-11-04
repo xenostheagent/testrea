@@ -788,11 +788,11 @@ html[data-theme] .left-rail {
 }
 html[data-theme] .left-rail > .rail-section:first-child {
   display: flex;
-  width: min(100%, 680px);
+  width: fit-content;
   min-height: 57px;
   align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  justify-content: center;
+  gap: 26px;
 }
 html[data-theme] .left-rail > .rail-section:first-child .rail-label,
 html[data-theme] .left-rail > .rail-section:not(:first-child),
@@ -811,6 +811,6 @@ html[data-theme] .mobile-nav { display: none !important; }
 @media (max-width: 720px) {
   html[data-theme] .app-shell { padding-bottom: 88px; }
   html[data-theme] .left-rail { display: flex; }
-  html[data-theme] .left-rail > .rail-section:first-child { gap: 4px; }
+  html[data-theme] .left-rail > .rail-section:first-child { gap: 17px; }
   html[data-theme] .left-rail .nav-link { padding: 0 3px; font-size: 10px; }
 }
