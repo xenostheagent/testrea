@@ -1,6 +1,7 @@
 const POSTS_KEY = "obvault.posts.v1";
 const ACCOUNTS_KEY = "obvault.accounts.v1";
 const SESSION_KEY = "obvault.demo-session.v1";
+const THEME_KEY = "obvault.theme.v1";
 const MEDIA_DB = "obvault-media";
 const MEDIA_STORE = "attachments";
 const DEMO_ACCOUNTS = [
@@ -55,6 +56,29 @@ let posts = loadJson(POSTS_KEY, starterPosts);
 let following = [];
 let interactions = { likedIds: [], savedIds: [] };
 let currentUser = null;
+let currentTheme = "dark";
+try {
+  currentTheme = localStorage.getItem(THEME_KEY) === "light" ? "light" : "dark";
+} catch {
+  currentTheme = "dark";
+}
+
+function setTheme(theme) {
+  currentTheme = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = currentTheme;
+  document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
+    const nextTheme = currentTheme === "dark" ? "light" : "dark";
+    button.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
+    button.querySelector(".theme-label").textContent = nextTheme === "light" ? "LIGHT" : "DARK";
+    button.querySelector(".theme-glyph").textContent = nextTheme === "light" ? "☼" : "☾";
+  });
+  document.querySelector('meta[name="theme-color"]').content = currentTheme === "dark" ? "#11100f" : "#f1eee8";
+  try {
+    localStorage.setItem(THEME_KEY, currentTheme);
+  } catch {
+    showToast("Theme changed for this visit, but couldn't be saved.");
+  }
+}
 
 function isOberlinEmail(email) {
   return /^[^\s@]+@oberlin\.edu$/i.test(email.trim());
@@ -600,6 +624,12 @@ document.addEventListener("click", async (event) => {
   const authTab = event.target.closest("[data-auth-mode]");
   if (authTab) setAuthMode(authTab.dataset.authMode);
 
+  if (event.target.closest("[data-theme-toggle]")) {
+    setTheme(currentTheme === "dark" ? "light" : "dark");
+  }
+
+  if (event.target.closest("#hero-create")) openComposer();
+
   const demoLogin = event.target.closest("[data-demo-login]");
   if (demoLogin) {
     const account = DEMO_ACCOUNTS.find((item) => item.email === demoLogin.dataset.demoLogin);
@@ -921,6 +951,7 @@ async function loadSavedMedia() {
 }
 
 renderStories();
+setTheme(currentTheme);
 if (authProvider instanceof DemoAuthProvider) {
   renderDemoAccountButtons();
 } else {

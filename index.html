@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#141313">
+    <meta name="theme-color" content="#11100f">
     <meta name="description" content="ObVault — a space for art, experiments, and work in progress.">
     <meta name="obvault-auth-api" content="">
     <title>ObVault — Make room for art</title>
@@ -20,6 +20,7 @@
         <p class="auth-kicker">OBERLIN MAKES THINGS</p>
         <h1 id="auth-title">A place for<br>work <em>in progress.</em></h1>
         <p class="auth-description">Share the finished thing, the messy middle, and everything you make along the way.</p>
+        <button class="theme-toggle auth-theme-toggle" type="button" data-theme-toggle aria-label="Switch to light mode"><span class="theme-glyph" aria-hidden="true">☼</span><span class="theme-label">LIGHT MODE</span></button>
         <div class="auth-tabs" role="tablist" aria-label="Account options">
           <button class="auth-tab active" type="button" role="tab" id="login-tab" aria-selected="true" aria-controls="login-form" data-auth-mode="login">Log in</button>
           <button class="auth-tab" type="button" role="tab" id="register-tab" aria-selected="false" aria-controls="register-form" data-auth-mode="register">Create account</button>
@@ -72,6 +73,7 @@
       </label>
       <div class="header-actions">
         <button class="icon-button notification-button" type="button" aria-label="Notifications" data-toast="Notifications are a demo-only feature right now."><span aria-hidden="true">♧</span><i></i></button>
+        <button class="theme-toggle app-theme-toggle" type="button" data-theme-toggle aria-label="Switch to light mode"><span class="theme-glyph" aria-hidden="true">☼</span><span class="theme-label">LIGHT</span></button>
         <button class="header-avatar avatar avatar-you" type="button" aria-label="Open your profile" data-view="profile">M</button>
         <button class="logout-button" id="logout" type="button">Log out</button>
       </div>
@@ -106,6 +108,24 @@
       </aside>
 
       <main class="main-content">
+        <section class="landing-hero" aria-labelledby="landing-title">
+          <div class="hero-meta"><span>OBERLIN, OHIO</span><span>THE CREATIVE STUDENT INDEX · 2026</span></div>
+          <div class="hero-copy">
+            <p class="hero-overline"><span class="red-dash"></span> A COMMUNITY FOR MAKING</p>
+            <h1 id="landing-title">MAKE<br> A LITTLE<br><em>NOISE.</em></h1>
+            <p class="hero-description">A place for the work that doesn't sit still. Sketches, stills, scraps, sounds—put it out there.</p>
+            <button class="hero-cta" type="button" id="hero-create">POST SOMETHING <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="hero-collage" aria-label="Abstract grunge artwork">
+            <div class="collage-grid"></div>
+            <div class="collage-disc"></div>
+            <div class="collage-paper"></div>
+            <div class="collage-cutout">OB<br><span>—</span><br>VAULT</div>
+            <div class="collage-stamp">MAKE<br>IT<br>WEIRD</div>
+            <span class="collage-caption">PLATE 01 / STUDIES IN ACCIDENT</span>
+          </div>
+          <div class="hero-foot"><span>SCROLL FOR THE GOOD STUFF</span><span>↓</span><span>NO. 001—026</span></div>
+        </section>
         <section class="welcome-row">
           <div>
             <p class="eyebrow" id="welcome-date">OBERLIN, IN GOOD COMPANY</p>
@@ -143,8 +163,8 @@
       <aside class="right-rail" aria-label="Discover more">
         <section class="side-card prompt-card">
           <div class="prompt-top"><span class="prompt-icon" aria-hidden="true">✳</span><span>THIS WEEK'S PROMPT</span></div>
-          <h2>Make room<br>for <em>small joys.</em></h2>
-          <p>Show us a tiny thing that made today better.</p>
+          <h2>Make room<br>for <em>happy accidents.</em></h2>
+          <p>Show us the rough draft, the raw take, the thing still finding its shape.</p>
           <button type="button" id="prompt-post">Join the prompt <span aria-hidden="true">↗</span></button>
           <div class="prompt-decoration" aria-hidden="true">✿</div>
         </section>
