@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f3ec">
+    <title>Wordflow — Typing practice</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="app.js" defer></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Wordflow home">
+        <span class="brand-mark" aria-hidden="true">w</span>
+        <span>wordflow</span>
+      </a>
+      <p class="top-note">A little practice goes a long way.</p>
+    </header>
+
+    <main>
+      <section class="intro" aria-labelledby="page-title">
+        <p class="eyebrow">DAILY PRACTICE</p>
+        <h1 id="page-title">Find your <span>flow.</span></h1>
+        <p class="intro-copy">A quiet place to sharpen your typing, one word at a time.</p>
+      </section>
+
+      <section class="practice-card" aria-label="Typing practice">
+        <div class="practice-toolbar">
+          <div class="mode-picker" role="group" aria-label="Test duration">
+            <button class="mode-button" type="button" data-duration="15" aria-pressed="false">15 sec</button>
+            <button class="mode-button selected" type="button" data-duration="30" aria-pressed="true">30 sec</button>
+            <button class="mode-button" type="button" data-duration="60" aria-pressed="false">60 sec</button>
+          </div>
+          <button class="restart-button" id="restart" type="button">
+            <span aria-hidden="true">↻</span>
+            New round
+          </button>
+        </div>
+
+        <div class="stats" aria-live="polite">
+          <div class="stat"><span class="stat-label">TIME</span><strong id="time">30</strong></div>
+          <div class="stat"><span class="stat-label">SPEED</span><strong id="speed">0 <small>wpm</small></strong></div>
+          <div class="stat"><span class="stat-label">ACCURACY</span><strong id="accuracy">100<small>%</small></strong></div>
+        </div>
+
+        <div class="word-area" id="word-area" aria-label="Text to type"></div>
+        <label class="input-label" for="typing-input">TYPE HERE</label>
+        <textarea
+          id="typing-input"
+          rows="2"
+          spellcheck="false"
+          autocapitalize="off"
+          autocomplete="off"
+          autocorrect="off"
+          aria-describedby="input-hint"
+          placeholder="Click here and start typing…"
+        ></textarea>
+        <p class="input-hint" id="input-hint">Your timer starts with your first keystroke.</p>
+      </section>
+
+      <section class="result-card" id="result" aria-live="polite" hidden>
+        <p class="eyebrow">ROUND COMPLETE</p>
+        <h2>Nice work.</h2>
+        <p id="result-copy"></p>
+        <button class="result-button" id="try-again" type="button">Practice again</button>
+      </section>
+
+      <p class="footer-note">Make space for progress.</p>
+    </main>
+  </body>
+</html>

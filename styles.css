@@ -1,0 +1,403 @@
+:root {
+  color-scheme: light;
+  --paper: #f4f3ec;
+  --card: #fffefa;
+  --ink: #202c2b;
+  --muted: #8b9690;
+  --line: #e7e8df;
+  --teal: #167f72;
+  --teal-soft: #e2f1e9;
+  --orange: #e68e5d;
+  --error: #c85c54;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse at 86% 12%, rgb(230 142 93 / 9%), transparent 26rem),
+    var(--paper);
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+.topbar {
+  display: flex;
+  width: min(1120px, calc(100% - 48px));
+  height: 82px;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto;
+  border-bottom: 1px solid rgb(32 44 43 / 9%);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  text-decoration: none;
+}
+
+.brand-mark {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  border-radius: 10px;
+  color: white;
+  background: var(--teal);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.top-note,
+.footer-note {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+main {
+  width: min(840px, calc(100% - 40px));
+  margin: 0 auto;
+}
+
+.intro {
+  padding: 62px 0 34px;
+  text-align: center;
+}
+
+.eyebrow,
+.input-label,
+.stat-label {
+  color: var(--teal);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 1.5px;
+}
+
+.eyebrow {
+  margin: 0 0 11px;
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(36px, 6vw, 55px);
+  font-weight: 800;
+  letter-spacing: -3px;
+  line-height: 1.08;
+}
+
+h1 span {
+  color: var(--teal);
+}
+
+.intro-copy {
+  margin: 13px 0 0;
+  color: #78827d;
+  font-size: 14px;
+}
+
+.practice-card,
+.result-card {
+  padding: 27px 32px 25px;
+  border: 1px solid rgb(32 44 43 / 6%);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: 0 16px 42px rgb(42 56 50 / 6%);
+}
+
+.practice-toolbar,
+.mode-picker,
+.stats {
+  display: flex;
+  align-items: center;
+}
+
+.practice-toolbar {
+  justify-content: space-between;
+}
+
+.mode-picker {
+  gap: 5px;
+  padding: 4px;
+  border-radius: 9px;
+  background: #f4f5ef;
+}
+
+.mode-button,
+.restart-button,
+.result-button {
+  border: 0;
+  cursor: pointer;
+}
+
+.mode-button {
+  padding: 8px 11px;
+  border-radius: 7px;
+  color: #7e8882;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+  transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+
+.mode-button:hover {
+  color: var(--ink);
+}
+
+.mode-button.selected {
+  color: var(--teal);
+  background: white;
+  box-shadow: 0 1px 5px rgb(32 44 43 / 9%);
+}
+
+.restart-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 3px 9px 10px;
+  color: #78827d;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.restart-button span {
+  color: var(--teal);
+  font-size: 18px;
+  line-height: 0.8;
+}
+
+.restart-button:hover,
+.restart-button:focus-visible {
+  color: var(--teal);
+}
+
+.stats {
+  gap: 34px;
+  margin: 27px 0 20px;
+}
+
+.stat {
+  display: grid;
+  gap: 2px;
+}
+
+.stat-label {
+  color: #a0aaa3;
+  font-size: 9px;
+  letter-spacing: 1.2px;
+}
+
+.stat strong {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 24px;
+  font-weight: 400;
+  letter-spacing: -1px;
+}
+
+.stat strong small {
+  color: #8e9992;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.word-area {
+  min-height: 138px;
+  max-height: 184px;
+  overflow: hidden;
+  padding: 20px 21px;
+  border: 1px solid #eef0e9;
+  border-radius: 12px;
+  background: #fafbf7;
+  color: #9da69f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 18px;
+  line-height: 1.85;
+  overflow-wrap: anywhere;
+}
+
+.word {
+  border-radius: 3px;
+}
+
+.word.current {
+  background: var(--teal-soft);
+  box-shadow: 0 0 0 2px var(--teal-soft);
+}
+
+.word.correct {
+  color: var(--ink);
+}
+
+.word.incorrect {
+  color: var(--error);
+  background: #f9e9e5;
+}
+
+.word-area.finished .word.current {
+  background: transparent;
+  box-shadow: none;
+}
+
+.input-label {
+  display: block;
+  margin: 20px 0 8px;
+}
+
+#typing-input {
+  display: block;
+  width: 100%;
+  min-height: 58px;
+  resize: vertical;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  outline: none;
+  color: var(--ink);
+  background: white;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+#typing-input::placeholder {
+  color: #b0b8b2;
+}
+
+#typing-input:focus {
+  border-color: #9bc9bb;
+  box-shadow: 0 0 0 3px rgb(22 127 114 / 9%);
+}
+
+#typing-input:disabled {
+  color: #98a29c;
+  background: #f7f8f3;
+}
+
+.input-hint {
+  margin: 9px 0 0;
+  color: #a0aaa3;
+  font-size: 11px;
+}
+
+.result-card {
+  margin-top: 16px;
+  padding: 23px 27px;
+  animation: rise-in 180ms ease-out;
+}
+
+.result-card h2 {
+  margin: 0;
+  font-size: 24px;
+  letter-spacing: -1px;
+}
+
+.result-card > p:not(.eyebrow) {
+  color: #77827c;
+  font-size: 13px;
+}
+
+.result-button {
+  margin-top: 3px;
+  padding: 10px 15px;
+  border-radius: 8px;
+  color: white;
+  background: var(--teal);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.result-button:hover {
+  background: #116d62;
+}
+
+.footer-note {
+  margin: 25px 0 35px;
+  text-align: center;
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .topbar {
+    width: calc(100% - 32px);
+    height: 66px;
+  }
+
+  .top-note {
+    max-width: 145px;
+    text-align: right;
+  }
+
+  main {
+    width: calc(100% - 28px);
+  }
+
+  .intro {
+    padding: 48px 0 28px;
+  }
+
+  .practice-card {
+    padding: 19px 16px 19px;
+  }
+
+  .stats {
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .word-area {
+    min-height: 170px;
+    padding: 15px;
+    font-size: 16px;
+  }
+
+  .mode-button {
+    padding: 8px 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
