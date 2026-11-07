@@ -66,6 +66,9 @@
   const BAR_WIDTH = 116;
   const MAX_ARRANGEMENT_BARS = 256;
   const TRACK_COLORS = ["#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd"];
+  const PATTERN_COLORS = ["#d3f36b", "#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd", "#b5a0ff", "#f28dba"];
+  const NOTE_LENGTHS = ["1/32", "1/16", "1/8", "1/4"];
+  const NOTE_LENGTH_BEATS = { "1/32": 0.125, "1/16": 0.25, "1/8": 0.5, "1/4": 1 };
   const state = {
     tracks: [],
     patterns: [],
@@ -128,18 +131,29 @@
     return state.patterns.find((pattern) => pattern.id === patternId) || null;
   }
 
+  function getPatternColor(index) {
+    if (index < PATTERN_COLORS.length) return PATTERN_COLORS[index];
+    return `hsl(${Math.round(index * 137.508 % 360)} 68% 66%)`;
+  }
+
+  function isPatternColor(color) {
+    return typeof color === "string" && (/^#[\da-f]{6}$/i.test(color) || /^hsl\(\d{1,3} 68% 66%\)$/.test(color));
+  }
+
   function getPatternTrackIds(pattern) {
     return Array.isArray(pattern?.trackIds) ? pattern.trackIds : state.tracks.map((track) => track.id);
   }
 
-  function makePatternSnapshot(id, name) {
+  function makePatternSnapshot(id, name, color = getPatternColor(state.patterns.length)) {
     const cells = {};
     const variants = {};
+    const noteLengths = {};
     state.tracks.forEach((track) => {
       cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) variants[track.id] = track.variant || "classic";
+      noteLengths[track.id] = "1/16";
     });
-    return { id, name, steps: state.steps, trackIds: state.tracks.map((track) => track.id), cells, variants };
+    return { id, name, color, steps: state.steps, trackIds: state.tracks.map((track) => track.id), cells, variants, noteLengths };
   }
 
   function captureCurrentPattern() {
@@ -147,12 +161,15 @@
     if (!pattern) return;
     pattern.steps = state.steps;
     const trackIds = getPatternTrackIds(pattern).filter((id) => state.tracks.some((track) => track.id === id));
+    const savedNoteLengths = pattern.noteLengths || {};
     pattern.trackIds = trackIds;
     pattern.cells = {};
     pattern.variants = {};
+    pattern.noteLengths = {};
     state.tracks.filter((track) => trackIds.includes(track.id)).forEach((track) => {
       pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
+      pattern.noteLengths[track.id] = NOTE_LENGTHS.includes(savedNoteLengths[track.id]) ? savedNoteLengths[track.id] : "1/16";
     });
   }
 
@@ -194,6 +211,7 @@
     const dragSource = $("#pattern-drag-source");
     dragSource.textContent = selected ? `Drag ${selected.name} to timeline` : "No pattern selected";
     dragSource.disabled = !selected;
+    dragSource.style.setProperty("--pattern-color", selected?.color || "var(--accent)");
     renderPatternInstrumentOptions();
   }
 
@@ -238,6 +256,7 @@
     pattern.trackIds.push(track.id);
     pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
     if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
+    pattern.noteLengths[track.id] = "1/16";
     renderTracks();
     renderPatternSelectors();
     saveState();
@@ -251,6 +270,7 @@
     pattern.trackIds = getPatternTrackIds(pattern).filter((id) => id !== track.id);
     delete pattern.cells[track.id];
     delete pattern.variants[track.id];
+    delete pattern.noteLengths[track.id];
     track.cells = Array(STEP_COUNT).fill(false);
     track.solo = false;
     if (track.sourceId && !state.patterns.some((item) => item.id !== pattern.id && getPatternTrackIds(item).includes(track.id))) {
@@ -290,10 +310,12 @@
     const pattern = {
       id: makeId(),
       name: `Pattern ${number}`,
+      color: getPatternColor(state.patterns.length),
       steps: source.steps,
       trackIds: [...getPatternTrackIds(source)],
       cells: Object.fromEntries(Object.entries(source.cells).map(([trackId, cells]) => [trackId, [...cells]])),
       variants: { ...source.variants },
+      noteLengths: { ...source.noteLengths },
     };
     state.patterns.push(pattern);
     applyPattern(pattern);
@@ -305,6 +327,26 @@
     if (state.view === "arrangement") renderArrangement();
     saveState();
     showToast(`${pattern.name} created from the selected pattern`);
+  }
+
+  function renamePattern() {
+    const pattern = getPattern();
+    if (!pattern) return;
+    const name = window.prompt("Rename pattern", pattern.name);
+    if (name === null) return;
+    const trimmed = name.trim();
+    if (!trimmed) {
+      showToast("Pattern name cannot be empty.");
+      return;
+    }
+    if (state.patterns.some((item) => item.id !== pattern.id && item.name.toLowerCase() === trimmed.toLowerCase())) {
+      showToast("A pattern with that name already exists.");
+      return;
+    }
+    pattern.name = trimmed;
+    renderPatternSelectors();
+    if (state.view === "arrangement") renderArrangement();
+    saveState();
   }
 
   function renderHeader() {
@@ -348,6 +390,12 @@
       info.append(name, subtitle);
       const soundSelect = makeSoundSelect(track);
       if (soundSelect) info.append(soundSelect);
+      const noteLengthControl = document.createElement("label");
+      noteLengthControl.className = "note-length-control";
+      const noteLengthLabel = document.createElement("span");
+      noteLengthLabel.textContent = "LEN";
+      noteLengthControl.append(noteLengthLabel, makeNoteLengthSelect(track, getPattern()));
+      info.append(noteLengthControl);
 
       const controls = document.createElement("div");
       controls.className = "track-controls";
@@ -420,6 +468,27 @@
       saveState();
       renderTracks();
       if (state.view === "arrangement") renderArrangement();
+    });
+    return select;
+  }
+
+  function makeNoteLengthSelect(track, pattern) {
+    const select = document.createElement("select");
+    select.className = "note-length-select";
+    select.setAttribute("aria-label", `${track.name} note length`);
+    select.title = "Note length for this instrument layer";
+    NOTE_LENGTHS.forEach((length) => {
+      const option = document.createElement("option");
+      option.value = length;
+      option.textContent = length;
+      select.append(option);
+    });
+    select.value = pattern?.noteLengths?.[track.id] || "1/16";
+    select.addEventListener("change", () => {
+      const activePattern = getPattern();
+      if (!activePattern) return;
+      activePattern.noteLengths[track.id] = select.value;
+      saveState();
     });
     return select;
   }
@@ -505,7 +574,7 @@
     $("#arrangement-pattern-length").value = String(steps);
     state.patternClips.forEach((clip) => {
       const pattern = getPattern(clip.patternId);
-      if (pattern) clip.startBar = Math.min(clip.startBar, maxPatternStartBar(pattern.steps));
+      if (pattern) clip.startBar = Math.min(clip.startBar, maxPatternStartBar(pattern.steps * (clip.repeatCount || 1)));
     });
     document.querySelectorAll(".length-button").forEach((button) => {
       const selected = Number(button.dataset.steps) === steps;
@@ -552,6 +621,11 @@
     return 60 / state.bpm / 4;
   }
 
+  function getNoteDuration(pattern, track) {
+    const length = pattern?.noteLengths?.[track.id] || "1/16";
+    return 60 / state.bpm * (NOTE_LENGTH_BEATS[length] || NOTE_LENGTH_BEATS["1/16"]);
+  }
+
   function scheduleStep(step, time, pattern = null, playMetronome = true) {
     const activeTracks = pattern
       ? state.tracks.filter((track) => getPatternTrackIds(pattern).includes(track.id))
@@ -561,7 +635,7 @@
       const cells = pattern ? pattern.cells?.[track.id] || [] : track.cells;
       const variant = pattern ? pattern.variants?.[track.id] || "classic" : track.variant;
       if (cells[step] && !track.muted && (!hasSolo || track.solo)) {
-        triggerTrack(track, time, step, variant);
+        triggerTrack(track, time, step, variant, getNoteDuration(pattern || getPattern(), track));
       }
     });
     if (playMetronome && state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
@@ -611,7 +685,8 @@
     const barPosition = state.playbackStartBar + (time - state.playbackStartTime) / (240 / state.bpm);
     return state.patternClips.flatMap((clip) => {
       const pattern = getPattern(clip.patternId);
-      if (!pattern || barPosition < clip.startBar || barPosition >= clip.startBar + pattern.steps / 16) return [];
+      const clipBars = pattern ? pattern.steps / 16 * (clip.repeatCount || 1) : 0;
+      if (!pattern || barPosition < clip.startBar || barPosition >= clip.startBar + clipBars) return [];
       return [{
         pattern,
         step: Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % pattern.steps,
@@ -699,6 +774,7 @@
           if (pattern) {
             pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
             pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
+            pattern.noteLengths[track.id] = "1/16";
           }
           imported.push({ track, file });
         } catch {
@@ -737,6 +813,7 @@
       removedIds.forEach((id) => {
         delete pattern.cells[id];
         delete pattern.variants[id];
+        delete pattern.noteLengths[id];
       });
     });
     renderTracks();
@@ -785,7 +862,7 @@
       return track.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.buffer.duration / secondsPerBar), latest);
     }, state.patternClips.reduce((end, clip) => {
       const pattern = getPattern(clip.patternId);
-      return pattern ? Math.max(end, clip.startBar + pattern.steps / 16) : end;
+      return pattern ? Math.max(end, clip.startBar + pattern.steps / 16 * (clip.repeatCount || 1)) : end;
     }, 8));
     state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, Math.max(state.arrangementBars, Math.ceil(clipEnd)));
     if (state.playbackStartTime && state.isPlaying && state.view === "arrangement") {
@@ -828,7 +905,8 @@
     patternTracks.forEach((pattern) => {
       const label = document.createElement("div");
       label.className = "arrangement-label";
-      label.innerHTML = `<span class="track-color" style="--track-color:var(--accent)"></span><div class="arrangement-label-info"><div class="arrangement-label-name"></div><div class="arrangement-label-type">Beat pattern · ${getPatternTrackIds(pattern).length} instruments</div></div>`;
+      label.style.setProperty("--track-color", pattern.color || "var(--accent)");
+      label.innerHTML = `<span class="track-color"></span><div class="arrangement-label-info"><div class="arrangement-label-name"></div><div class="arrangement-label-type">Beat pattern · ${getPatternTrackIds(pattern).length} instruments</div></div>`;
       label.querySelector(".arrangement-label-name").textContent = pattern.name;
       labels.append(label);
 
@@ -964,6 +1042,7 @@
     state.patternClips.push({
       id: makeId(),
       patternId: pattern.id,
+      repeatCount: 1,
       startBar: Math.max(0, Math.min(maxPatternStartBar(pattern.steps), Math.floor(startBar))),
     });
     state.patternClips.sort((left, right) => left.startBar - right.startBar);
@@ -978,7 +1057,7 @@
     if (!clip) return;
     const pattern = getPattern(clip.patternId);
     if (!pattern) return;
-    clip.startBar = Math.max(0, Math.min(maxPatternStartBar(pattern.steps), Math.floor(startBar)));
+    clip.startBar = Math.max(0, Math.min(maxPatternStartBar(pattern.steps * (clip.repeatCount || 1)), Math.floor(startBar)));
     state.patternClips.sort((left, right) => left.startBar - right.startBar);
     updateArrangementLength();
     renderArrangement();
@@ -987,6 +1066,17 @@
 
   function removePatternClip(clipId) {
     state.patternClips = state.patternClips.filter((clip) => clip.id !== clipId);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
+  function setPatternClipRepeat(clip, repeatCount) {
+    const pattern = getPattern(clip.patternId);
+    if (!pattern) return;
+    const patternBars = pattern.steps / 16;
+    const maximum = Math.max(1, Math.floor((MAX_ARRANGEMENT_BARS - clip.startBar) / patternBars));
+    clip.repeatCount = Math.max(1, Math.min(maximum, Math.round(repeatCount)));
     updateArrangementLength();
     renderArrangement();
     saveState();
@@ -1120,16 +1210,57 @@
     const pattern = getPattern(clip.patternId) || getPattern();
     const steps = pattern?.steps || state.steps;
     const patternName = pattern?.name || "Drum pattern";
+    const patternBars = steps / 16;
+    const repeatCount = Math.max(1, Math.floor(clip.repeatCount || 1));
+    const totalBars = patternBars * repeatCount;
+    element.style.setProperty("--pattern-color", pattern?.color || "var(--accent)");
     element.draggable = true;
     element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
-    element.style.width = `${Math.max(28, steps / 16 * BAR_WIDTH - 8)}px`;
-    element.setAttribute("aria-label", `${patternName}, bar ${clip.startBar + 1}; drag to move`);
+    element.style.width = `${Math.max(28, totalBars * BAR_WIDTH - 8)}px`;
+    element.setAttribute("aria-label", `${patternName}, bar ${clip.startBar + 1}, repeats ${repeatCount} times; drag to move or resize right edge to repeat`);
     const icon = document.createElement("span");
     icon.className = "pattern-clip-icon";
     icon.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg>';
     const text = document.createElement("span");
     text.className = "pattern-clip-name";
-    text.textContent = `${patternName.toUpperCase()} · ${steps / 16} BAR${steps > 16 ? "S" : ""}`;
+    text.textContent = `${patternName.toUpperCase()} · ${totalBars} BAR${totalBars > 1 ? "S" : ""}${repeatCount > 1 ? ` ×${repeatCount}` : ""}`;
+    const repeatHandle = document.createElement("button");
+    repeatHandle.type = "button";
+    repeatHandle.className = "pattern-clip-repeat-handle";
+    repeatHandle.title = "Drag right edge to repeat this pattern";
+    repeatHandle.setAttribute("aria-label", "Drag right edge to repeat this pattern");
+    repeatHandle.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      setPatternClipRepeat(clip, repeatCount + direction);
+    });
+    repeatHandle.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const startX = event.clientX;
+      const startBars = totalBars;
+      const maxRepeats = Math.max(1, Math.floor((MAX_ARRANGEMENT_BARS - clip.startBar) / patternBars));
+      let nextRepeatCount = repeatCount;
+      element.draggable = false;
+      const onMove = (moveEvent) => {
+        const bars = Math.max(patternBars, Math.min(maxRepeats * patternBars, startBars + (moveEvent.clientX - startX) / BAR_WIDTH));
+        nextRepeatCount = Math.max(1, Math.round(bars / patternBars));
+        const nextBars = patternBars * nextRepeatCount;
+        element.style.width = `${Math.max(28, nextBars * BAR_WIDTH - 8)}px`;
+        text.textContent = `${patternName.toUpperCase()} · ${nextBars} BAR${nextBars > 1 ? "S" : ""}${nextRepeatCount > 1 ? ` ×${nextRepeatCount}` : ""}`;
+      };
+      const onEnd = () => {
+        document.removeEventListener("pointermove", onMove);
+        document.removeEventListener("pointerup", onEnd);
+        document.removeEventListener("pointercancel", onEnd);
+        element.draggable = true;
+        setPatternClipRepeat(clip, nextRepeatCount);
+      };
+      document.addEventListener("pointermove", onMove);
+      document.addEventListener("pointerup", onEnd);
+      document.addEventListener("pointercancel", onEnd);
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "pattern-clip-remove";
@@ -1145,9 +1276,9 @@
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
     });
     element.addEventListener("click", (event) => {
-      if (!event.target.closest(".pattern-clip-remove")) setArrangementCursor(clip.startBar);
+      if (!event.target.closest(".pattern-clip-remove, .pattern-clip-repeat-handle")) setArrangementCursor(clip.startBar);
     });
-    element.append(icon, text, remove);
+    element.append(icon, text, repeatHandle, remove);
     return element;
   }
 
@@ -1416,6 +1547,7 @@
             if (pattern) {
               pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
               pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => record.cells?.[index] === true);
+              pattern.noteLengths[track.id] = "1/16";
             }
           } else {
             track.sample = { name: record.fileName || record.trackName, buffer };
@@ -1479,7 +1611,7 @@
     });
   }
 
-  function triggerTrack(track, time, step, variant = track.variant) {
+  function triggerTrack(track, time, step, variant = track.variant, noteDuration = getStepDuration()) {
     const context = state.audioContext;
     const output = track.gainNode;
     if (track.sample) {
@@ -1487,23 +1619,28 @@
       source.buffer = track.sample.buffer;
       const envelope = context.createGain();
       envelope.gain.setValueAtTime(1, time);
+      const duration = Math.max(0.005, Math.min(track.sample.buffer.duration, noteDuration));
+      const fade = Math.min(0.01, duration * 0.1);
+      envelope.gain.setValueAtTime(1, time + Math.max(0, duration - fade));
+      envelope.gain.linearRampToValueAtTime(0.0001, time + duration);
       source.connect(envelope);
       envelope.connect(output);
-      source.start(time);
+      source.start(time, 0, duration);
       return;
     }
+    const durationScale = noteDuration / getStepDuration();
     switch (track.kind) {
-      case "kick": playKick(context, output, time, step, variant); break;
-      case "snare": playSnare(context, output, time, variant); break;
-      case "clap": playClap(context, output, time, variant); break;
-      case "hat": playHat(context, output, time, false, variant); break;
-      case "openhat": playHat(context, output, time, true, variant); break;
-      case "rim": playRim(context, output, time, variant); break;
+      case "kick": playKick(context, output, time, step, variant, durationScale); break;
+      case "snare": playSnare(context, output, time, variant, durationScale); break;
+      case "clap": playClap(context, output, time, variant, durationScale); break;
+      case "hat": playHat(context, output, time, false, variant, durationScale); break;
+      case "openhat": playHat(context, output, time, true, variant, durationScale); break;
+      case "rim": playRim(context, output, time, variant, durationScale); break;
       default: break;
     }
   }
 
-  function playKick(context, output, time, step, variant) {
+  function playKick(context, output, time, step, variant, durationScale) {
     const osc = context.createOscillator();
     const envelope = context.createGain();
     const settings = {
@@ -1511,17 +1648,18 @@
       deep: [92, 31, 0.56],
       punch: [182, 58, 0.23],
     }[variant] || [148, 43, 0.36];
+    const duration = settings[2] * durationScale;
     const pitch = settings[0] * (step % 8 === 0 ? 1 : 0.88);
     osc.type = "sine";
     osc.frequency.setValueAtTime(pitch, time);
-    osc.frequency.exponentialRampToValueAtTime(settings[1], time + settings[2] * 0.38);
+    osc.frequency.exponentialRampToValueAtTime(settings[1], time + duration * 0.38);
     envelope.gain.setValueAtTime(0.0001, time);
     envelope.gain.exponentialRampToValueAtTime(1, time + 0.004);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + settings[2]);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
     osc.connect(envelope);
     envelope.connect(output);
     osc.start(time);
-    osc.stop(time + settings[2] + 0.02);
+    osc.stop(time + duration + 0.02);
   }
 
   function playNoise(context, output, time, duration, cutoff, peak = 0.35, resonance = 0.7) {
@@ -1542,26 +1680,26 @@
     source.stop(time + duration + 0.015);
   }
 
-  function playSnare(context, output, time, variant) {
+  function playSnare(context, output, time, variant, durationScale) {
     const settings = {
       classic: [0.17, 1500, 0.36, 185, 0.1],
       tight: [0.1, 2300, 0.32, 235, 0.075],
       noise: [0.23, 1000, 0.48, 145, 0.14],
     }[variant] || [0.17, 1500, 0.36, 185, 0.1];
-    playNoise(context, output, time, settings[0], settings[1], settings[2]);
+    playNoise(context, output, time, settings[0] * durationScale, settings[1], settings[2]);
     const body = context.createOscillator();
     const envelope = context.createGain();
     body.type = "triangle";
     body.frequency.setValueAtTime(settings[3], time);
     envelope.gain.setValueAtTime(0.2, time);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + settings[4]);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + settings[4] * durationScale);
     body.connect(envelope);
     envelope.connect(output);
     body.start(time);
-    body.stop(time + settings[4] + 0.02);
+    body.stop(time + settings[4] * durationScale + 0.02);
   }
 
-  function playClap(context, output, time, variant) {
+  function playClap(context, output, time, variant, durationScale) {
     const settings = {
       classic: [[0, 0.018, 0.038], 0.17, 1100, 0.28],
       tight: [[0, 0.012], 0.1, 1500, 0.27],
@@ -1569,30 +1707,30 @@
     }[variant] || [[0, 0.018, 0.038], 0.17, 1100, 0.28];
     settings[0].forEach((offset, index) => {
       const last = index === settings[0].length - 1;
-      playNoise(context, output, time + offset, last ? settings[1] : 0.045, settings[2], last ? settings[3] : 0.2);
+      playNoise(context, output, time + offset * durationScale, (last ? settings[1] : 0.045) * durationScale, settings[2], last ? settings[3] : 0.2);
     });
   }
 
-  function playHat(context, output, time, open, variant) {
+  function playHat(context, output, time, open, variant, durationScale) {
     const settings = open
       ? ({ classic: [0.34, 6500, 0.2], shimmer: [0.48, 9000, 0.22], dark: [0.3, 3800, 0.25] }[variant] || [0.34, 6500, 0.2])
       : ({ classic: [0.055, 6500, 0.16], soft: [0.07, 4300, 0.12], bright: [0.045, 10000, 0.2] }[variant] || [0.055, 6500, 0.16]);
-    playNoise(context, output, time, settings[0], settings[1], settings[2], 0.55);
+    playNoise(context, output, time, settings[0] * durationScale, settings[1], settings[2], 0.55);
   }
 
-  function playRim(context, output, time, variant) {
+  function playRim(context, output, time, variant, durationScale) {
     const osc = context.createOscillator();
     const envelope = context.createGain();
     osc.type = "triangle";
     const pitch = { classic: [880, 420], low: [190, 110], high: [1450, 720] }[variant] || [880, 420];
     osc.frequency.setValueAtTime(pitch[0], time);
-    osc.frequency.exponentialRampToValueAtTime(pitch[1], time + 0.045);
+    osc.frequency.exponentialRampToValueAtTime(pitch[1], time + 0.045 * durationScale);
     envelope.gain.setValueAtTime(0.32, time);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.075);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.075 * durationScale);
     osc.connect(envelope);
     envelope.connect(output);
     osc.start(time);
-    osc.stop(time + 0.09);
+    osc.stop(time + 0.09 * durationScale);
   }
 
   function triggerClick(time, downbeat) {
@@ -1738,6 +1876,8 @@
         trackIds: [...getPatternTrackIds(pattern)],
         cells: Object.fromEntries(Object.entries(pattern.cells).map(([trackId, cells]) => [trackId, [...cells]])),
         variants: { ...pattern.variants },
+        noteLengths: { ...pattern.noteLengths },
+        color: pattern.color,
       })),
       tracks: state.tracks.map((track) => ({
         id: track.id,
@@ -1752,7 +1892,7 @@
         variant: track.variant,
         sampleName: track.sample?.name || null,
       })),
-      patternClips: state.patternClips.map(({ id, patternId, startBar }) => ({ id, patternId, startBar })),
+      patternClips: state.patternClips.map(({ id, patternId, startBar, repeatCount }) => ({ id, patternId, startBar, repeatCount: repeatCount || 1 })),
       arrangementBars: state.arrangementBars,
       arrangementCursor: state.arrangementCursor,
       view: state.view,
@@ -1825,33 +1965,37 @@
       if (Array.isArray(saved.patterns)) {
         const restoredPatterns = saved.patterns
           .filter((pattern) => typeof pattern?.id === "string" && typeof pattern.name === "string")
-          .map((pattern) => {
+          .map((pattern, index) => {
             const cells = {};
             const variants = {};
+            const noteLengths = {};
             state.tracks.forEach((track) => {
               cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
               const variant = pattern.variants?.[track.id];
               if (SOUND_VARIANTS[track.kind]?.some((sound) => sound.id === variant)) variants[track.id] = variant;
+              noteLengths[track.id] = NOTE_LENGTHS.includes(pattern.noteLengths?.[track.id]) ? pattern.noteLengths[track.id] : "1/16";
             });
             return {
               id: pattern.id,
               name: pattern.name,
+              color: isPatternColor(pattern.color) ? pattern.color : getPatternColor(index),
               steps: pattern.steps === 32 ? 32 : 16,
               trackIds: Array.isArray(pattern.trackIds)
                 ? [...new Set(pattern.trackIds.filter((trackId) => state.tracks.some((track) => track.id === trackId)))]
                 : state.tracks.map((track) => track.id),
               cells,
               variants,
+              noteLengths,
             };
           });
         state.patterns = restoredPatterns.length
           ? restoredPatterns
-          : [makePatternSnapshot(state.patterns[0]?.id || makeId(), state.patterns[0]?.name || "Pattern 1")];
+          : [makePatternSnapshot(state.patterns[0]?.id || makeId(), state.patterns[0]?.name || "Pattern 1", PATTERN_COLORS[0])];
       } else {
         const initialPattern = state.patterns[0];
-        state.patterns = [makePatternSnapshot(initialPattern?.id || makeId(), initialPattern?.name || "Pattern 1")];
+        state.patterns = [makePatternSnapshot(initialPattern?.id || makeId(), initialPattern?.name || "Pattern 1", initialPattern?.color || PATTERN_COLORS[0])];
       }
-      if (!state.patterns.length) state.patterns = [makePatternSnapshot(makeId(), "Pattern 1")];
+      if (!state.patterns.length) state.patterns = [makePatternSnapshot(makeId(), "Pattern 1", PATTERN_COLORS[0])];
       state.selectedPatternId = state.patterns.some((pattern) => pattern.id === saved.selectedPatternId)
         ? saved.selectedPatternId
         : state.patterns[0].id;
@@ -1863,10 +2007,15 @@
           .map((clip) => {
             const patternId = state.patterns.some((pattern) => pattern.id === clip.patternId) ? clip.patternId : state.selectedPatternId;
             const pattern = getPattern(patternId);
+            const requestedRepeats = Number.isInteger(clip.repeatCount) ? Math.max(1, clip.repeatCount) : 1;
+            const repeatCount = pattern
+              ? Math.min(requestedRepeats, Math.max(1, Math.floor(MAX_ARRANGEMENT_BARS / (pattern.steps / 16))))
+              : 1;
             return {
               id: clip.id,
               patternId,
-              startBar: Math.max(0, Math.min(maxPatternStartBar(pattern?.steps), Math.floor(clip.startBar))),
+              repeatCount,
+              startBar: Math.max(0, Math.min(maxPatternStartBar((pattern?.steps || 16) * repeatCount), Math.floor(clip.startBar))),
             };
           });
       }
@@ -1876,6 +2025,7 @@
   }
 
   function exportPattern() {
+    const activePattern = getPattern();
     const pattern = {
       app: "Pulsegrid",
       version: 1,
@@ -1884,11 +2034,12 @@
       swing: state.swing,
       bars: state.steps / 16,
       steps: state.steps,
-      pattern: getPattern()?.name || "Pattern",
-      tracks: state.tracks.map((track) => ({
+      pattern: activePattern?.name || "Pattern",
+      tracks: state.tracks.filter((track) => getPatternTrackIds(activePattern).includes(track.id)).map((track) => ({
         name: track.name,
         sample: track.sample?.name || null,
         sound: track.variant || null,
+        noteLength: activePattern?.noteLengths?.[track.id] || "1/16",
         steps: track.cells.slice(0, state.steps).map((active) => active ? 1 : 0),
       })),
     };
@@ -1962,18 +2113,25 @@
         if (!pattern) return;
         const patternTrackIds = new Set(getPatternTrackIds(pattern));
         const patternTracks = allTracks.filter((track) => patternTrackIds.has(track.id));
-        for (let step = 0; step < pattern.steps; step += 1) {
+        const totalSteps = pattern.steps * (clip.repeatCount || 1);
+        for (let step = 0; step < totalSteps; step += 1) {
+          const patternStep = step % pattern.steps;
           const time = clip.startBar * secondsPerBar + step * stepDuration +
             (step % 2 === 1 ? stepDuration * (state.swing / 100) : 0);
           if (time >= duration) continue;
           patternTracks.forEach((track) => {
-            if (pattern.cells[track.id]?.[step] && !track.muted && (!hasSolo || track.solo)) {
-              triggerTrack(track, time, step, pattern.variants[track.id] || track.variant);
+            if (pattern.cells[track.id]?.[patternStep] && !track.muted && (!hasSolo || track.solo)) {
+              triggerTrack(track, time, patternStep, pattern.variants[track.id] || track.variant, getNoteDuration(pattern, track));
             }
           });
-          if (state.metronome && step % 4 === 0) triggerClick(time, step === 0);
         }
       });
+      if (state.metronome) {
+        for (let step = 0; step < Math.ceil(duration / stepDuration); step += 4) {
+          const time = step * stepDuration;
+          triggerClick(time, step % 16 === 0);
+        }
+      }
 
       const rendered = await context.startRendering();
       downloadBlob(encodeWav(rendered), "pulsegrid-song.wav");
@@ -2115,6 +2273,8 @@
     });
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#arrangement-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
+    $("#rename-pattern-sequencer-button").addEventListener("click", renamePattern);
+    $("#rename-pattern-button").addEventListener("click", renamePattern);
     $("#pattern-drag-source").addEventListener("dragstart", (event) => {
       const pattern = getPattern();
       if (!pattern || !event.dataTransfer) return;
@@ -2193,7 +2353,7 @@
       state.tracks.forEach((track) => track.gainNode?.disconnect());
       state.tracks = makeTracks();
       state.steps = 16;
-      state.patterns = [makePatternSnapshot(makeId(), "Pattern 1")];
+      state.patterns = [makePatternSnapshot(makeId(), "Pattern 1", PATTERN_COLORS[0])];
       state.selectedPatternId = state.patterns[0].id;
       renderPatternSelectors();
       state.patternClips = [];
