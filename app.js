@@ -1143,11 +1143,7 @@
   }
 
   function renderArrangement() {
-    const editor = $("#arrangement-editor");
-    const hasArrangementContent = state.arrangementTracks.length > 0 || state.patternClips.length > 0 || state.pianoNotes.length > 0;
-    const showArrangement = state.view === "arrangement";
-    $("#arrangement-empty").hidden = !showArrangement || hasArrangementContent;
-    editor.hidden = !showArrangement || !hasArrangementContent;
+    $("#arrangement-empty").hidden = state.view !== "arrangement";
     $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.patternClips.length + (state.pianoNotes.length ? 1 : 0));
     renderPatternSelectors();
     renderInstrumentBrowser();
@@ -1595,7 +1591,6 @@
     const showPianoRoll = view === "piano-roll";
     $("#arrangement-view").hidden = false;
     document.body.classList.toggle("is-beat-grid-open", showSequencer);
-    $("#arrangement-card").classList.toggle("is-tool-open", showSequencer || showPianoRoll);
     $("#sequencer-view").hidden = !showSequencer;
     $("#piano-roll-view").hidden = !showPianoRoll;
     $("#sequencer-tab").classList.toggle("is-selected", showSequencer);

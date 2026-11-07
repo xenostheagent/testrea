@@ -141,121 +141,129 @@
           <div class="arrangement-card" id="arrangement-card">
             <div class="arrangement-layout">
               <div class="arrangement-main">
-                <div class="arrangement-empty" id="arrangement-empty">
-                  <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-                  <h2>Start arranging your song</h2>
-                  <p>Add a step pattern or import recordings, then place clips on the timeline.</p>
-                  <button class="quiet-button" id="empty-import-button" type="button">＋ Add audio files</button>
-                </div>
-                <div class="arrangement-editor" id="arrangement-editor" hidden>
-                  <div class="arrangement-track-column">
-                    <div class="arrangement-track-header">TRACKS <span id="arrangement-track-count">01</span></div>
-                    <div class="arrangement-track-labels" id="arrangement-track-labels"></div>
-                    <button class="add-track-button" id="add-track-button" type="button">＋ Add audio track</button>
-                  </div>
-                  <div class="timeline-scroll" id="timeline-scroll">
-                    <div class="timeline-content" id="timeline-content"></div>
-                  </div>
-                </div>
-                <section class="workspace workspace-tool-panel" id="sequencer-view" role="tabpanel" aria-labelledby="sequencer-tab" hidden>
-                  <div class="section-heading">
-                    <div>
-                      <div class="eyebrow">STEP SEQUENCER <span class="heading-dot"></span> <span id="bar-label">1 BAR</span></div>
-                      <h1>Build your groove<span class="heading-period">.</span></h1>
-                      <p class="section-subtitle">Click a step to add a hit. Press play and make it move.</p>
+                <section class="workspace-area" aria-label="Workspace">
+                  <div class="workspace-area-heading">WORKSPACE</div>
+                  <div class="workspace-content">
+                    <div class="arrangement-empty" id="arrangement-empty">
+                      <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                      <h2>Start arranging your song</h2>
+                      <p>Choose a pattern above and drag it into the track view below, or import recordings to get started.</p>
+                      <button class="quiet-button" id="empty-import-button" type="button">＋ Add audio files</button>
                     </div>
-                    <div class="sequencer-actions">
-                      <label class="pattern-select-control">
-                        <span>PATTERN</span>
-                        <select id="sequencer-pattern-select" aria-label="Select pattern to edit"></select>
-                      </label>
-                      <button class="quiet-button" id="rename-pattern-sequencer-button" type="button">Rename</button>
-                      <button class="quiet-button" id="sequencer-browser-button" type="button">Browser</button>
-                      <label class="pattern-select-control pattern-instrument-control">
-                        <span>INSTRUMENT</span>
-                        <select id="sequencer-instrument-select" aria-label="Add an instrument layer to this pattern"></select>
-                      </label>
-                      <button class="quiet-button add-pattern-instrument-button" id="add-sequencer-instrument-button" type="button" aria-label="Add instrument layer to selected pattern">＋</button>
-                      <button class="quiet-button" id="new-pattern-sequencer-button" type="button">＋ New</button>
-                      <button class="quiet-button" id="clear-button" type="button">
-                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11m-9.5 0 .6 10h5.8l.6-10M8 6V4h4v2m-3 3v4m2-4v4" /></svg>
-                        Clear
-                      </button>
-                      <button class="quiet-button" id="randomize-button" type="button">
-                        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M14 4h3v3m0-3-4.2 4.2M6 14l-3 3m11-1h3v-3m0 3-4.2-4.2M3 3l3 3" /></svg>
-                        Surprise me
-                      </button>
-                    </div>
-                  </div>
-                  <div class="sequencer-card">
-                    <div class="grid-header">
-                      <div class="track-header-label"><span>TRACK</span><span class="header-track-count" id="track-count">06</span></div>
-                      <div class="steps-header" id="steps-header" aria-hidden="true"></div>
-                    </div>
-                    <div class="track-list" id="track-list" aria-label="Drum step sequencer"></div>
-                    <div class="grid-footer">
-                      <div class="grid-legend"><span class="legend-swatch"></span>STEP ON <span class="legend-playhead"></span>PLAYHEAD</div>
-                      <span class="grid-hint"><kbd>SPACE</kbd> play / stop <span class="hint-divider">·</span> click steps to edit</span>
-                    </div>
-                  </div>
-                  <section class="patterns-section" aria-labelledby="patterns-title">
-                    <div class="patterns-heading">
-                      <div>
-                        <div class="eyebrow">START SOMEWHERE</div>
-                        <h2 id="patterns-title">Quick patterns</h2>
+                    <section class="workspace workspace-tool-panel" id="sequencer-view" role="tabpanel" aria-labelledby="sequencer-tab" hidden>
+                      <div class="section-heading">
+                        <div>
+                          <div class="eyebrow">STEP SEQUENCER <span class="heading-dot"></span> <span id="bar-label">1 BAR</span></div>
+                          <h1>Build your groove<span class="heading-period">.</span></h1>
+                          <p class="section-subtitle">Click a step to add a hit. Press play and make it move.</p>
+                        </div>
+                        <div class="sequencer-actions">
+                          <label class="pattern-select-control">
+                            <span>PATTERN</span>
+                            <select id="sequencer-pattern-select" aria-label="Select pattern to edit"></select>
+                          </label>
+                          <button class="quiet-button" id="rename-pattern-sequencer-button" type="button">Rename</button>
+                          <button class="quiet-button" id="sequencer-browser-button" type="button">Browser</button>
+                          <label class="pattern-select-control pattern-instrument-control">
+                            <span>INSTRUMENT</span>
+                            <select id="sequencer-instrument-select" aria-label="Add an instrument layer to this pattern"></select>
+                          </label>
+                          <button class="quiet-button add-pattern-instrument-button" id="add-sequencer-instrument-button" type="button" aria-label="Add instrument layer to selected pattern">＋</button>
+                          <button class="quiet-button" id="new-pattern-sequencer-button" type="button">＋ New</button>
+                          <button class="quiet-button" id="clear-button" type="button">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11m-9.5 0 .6 10h5.8l.6-10M8 6V4h4v2m-3 3v4m2-4v4" /></svg>
+                            Clear
+                          </button>
+                          <button class="quiet-button" id="randomize-button" type="button">
+                            <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M14 4h3v3m0-3-4.2 4.2M6 14l-3 3m11-1h3v-3m0 3-4.2-4.2M3 3l3 3" /></svg>
+                            Surprise me
+                          </button>
+                        </div>
                       </div>
-                      <span class="patterns-note">Pick one, then make it yours</span>
-                    </div>
-                    <div class="pattern-cards" id="pattern-cards"></div>
-                  </section>
-                  <footer class="bottom-bar">
-                    <span><span class="footer-pulse"></span>Patterns and imported recordings are saved in this browser.</span>
-                    <button id="reset-session" type="button">Reset session</button>
-                  </footer>
+                      <div class="sequencer-card">
+                        <div class="grid-header">
+                          <div class="track-header-label"><span>TRACK</span><span class="header-track-count" id="track-count">06</span></div>
+                          <div class="steps-header" id="steps-header" aria-hidden="true"></div>
+                        </div>
+                        <div class="track-list" id="track-list" aria-label="Drum step sequencer"></div>
+                        <div class="grid-footer">
+                          <div class="grid-legend"><span class="legend-swatch"></span>STEP ON <span class="legend-playhead"></span>PLAYHEAD</div>
+                          <span class="grid-hint"><kbd>SPACE</kbd> play / stop <span class="hint-divider">·</span> click steps to edit</span>
+                        </div>
+                      </div>
+                      <section class="patterns-section" aria-labelledby="patterns-title">
+                        <div class="patterns-heading">
+                          <div>
+                            <div class="eyebrow">START SOMEWHERE</div>
+                            <h2 id="patterns-title">Quick patterns</h2>
+                          </div>
+                          <span class="patterns-note">Pick one, then make it yours</span>
+                        </div>
+                        <div class="pattern-cards" id="pattern-cards"></div>
+                      </section>
+                      <footer class="bottom-bar">
+                        <span><span class="footer-pulse"></span>Patterns and imported recordings are saved in this browser.</span>
+                        <button id="reset-session" type="button">Reset session</button>
+                      </footer>
+                    </section>
+                    <section class="piano-roll-view" id="piano-roll-view" role="tabpanel" aria-labelledby="piano-roll-tab" hidden>
+                      <div class="piano-roll-toolbar">
+                        <label class="pattern-select-control">
+                          <span>INSTRUMENT</span>
+                          <select id="piano-instrument-select" aria-label="Piano roll instrument"></select>
+                        </label>
+                        <label class="pattern-select-control">
+                          <span>SNAP</span>
+                          <select id="piano-snap-select" aria-label="Piano roll grid snap">
+                            <option value="1">1/32</option>
+                            <option value="2" selected>1/16</option>
+                            <option value="4">1/8</option>
+                            <option value="8">1/4</option>
+                          </select>
+                        </label>
+                        <label class="pattern-select-control">
+                          <span>LENGTH</span>
+                          <select id="piano-note-length-select" aria-label="Default piano roll note length">
+                            <option value="1">1/32</option>
+                            <option value="2">1/16</option>
+                            <option value="4">1/8</option>
+                            <option value="8">1/4</option>
+                          </select>
+                        </label>
+                        <label class="pattern-select-control">
+                          <span>BARS</span>
+                          <select id="piano-bars-select" aria-label="Piano roll length">
+                            <option value="1">1 BAR</option>
+                            <option value="2">2 BARS</option>
+                            <option value="4" selected>4 BARS</option>
+                            <option value="8">8 BARS</option>
+                          </select>
+                        </label>
+                        <button class="quiet-button" id="clear-piano-roll-button" type="button">Clear notes</button>
+                      </div>
+                      <div class="piano-roll-scroll" id="piano-roll-scroll">
+                        <div class="piano-roll-keys" id="piano-roll-keys" aria-label="Piano keyboard"></div>
+                        <div class="piano-roll-editor">
+                          <div class="piano-roll-ruler" id="piano-roll-ruler"></div>
+                          <div class="piano-roll-grid" id="piano-roll-grid" aria-label="Piano roll note grid"></div>
+                        </div>
+                      </div>
+                      <div class="piano-roll-footer">Click to add · Drag to move · Drag right edge to resize · Delete removes selected note · Drum kits: C2 kick, D2 snare, D♯2 clap, F♯2 closed hat, A♯2 open hat</div>
+                    </section>
+                  </div>
                 </section>
-                <section class="piano-roll-view" id="piano-roll-view" role="tabpanel" aria-labelledby="piano-roll-tab" hidden>
-                  <div class="piano-roll-toolbar">
-                    <label class="pattern-select-control">
-                      <span>INSTRUMENT</span>
-                      <select id="piano-instrument-select" aria-label="Piano roll instrument"></select>
-                    </label>
-                    <label class="pattern-select-control">
-                      <span>SNAP</span>
-                      <select id="piano-snap-select" aria-label="Piano roll grid snap">
-                        <option value="1">1/32</option>
-                        <option value="2" selected>1/16</option>
-                        <option value="4">1/8</option>
-                        <option value="8">1/4</option>
-                      </select>
-                    </label>
-                    <label class="pattern-select-control">
-                      <span>LENGTH</span>
-                      <select id="piano-note-length-select" aria-label="Default piano roll note length">
-                        <option value="1">1/32</option>
-                        <option value="2">1/16</option>
-                        <option value="4">1/8</option>
-                        <option value="8">1/4</option>
-                      </select>
-                    </label>
-                    <label class="pattern-select-control">
-                      <span>BARS</span>
-                      <select id="piano-bars-select" aria-label="Piano roll length">
-                        <option value="1">1 BAR</option>
-                        <option value="2">2 BARS</option>
-                        <option value="4" selected>4 BARS</option>
-                        <option value="8">8 BARS</option>
-                      </select>
-                    </label>
-                    <button class="quiet-button" id="clear-piano-roll-button" type="button">Clear notes</button>
-                  </div>
-                  <div class="piano-roll-scroll" id="piano-roll-scroll">
-                    <div class="piano-roll-keys" id="piano-roll-keys" aria-label="Piano keyboard"></div>
-                    <div class="piano-roll-editor">
-                      <div class="piano-roll-ruler" id="piano-roll-ruler"></div>
-                      <div class="piano-roll-grid" id="piano-roll-grid" aria-label="Piano roll note grid"></div>
+                <section class="track-view-area" aria-label="Track view">
+                  <div class="track-view-heading">TRACK VIEW</div>
+                  <div class="arrangement-editor" id="arrangement-editor">
+                    <div class="arrangement-track-column">
+                      <div class="arrangement-track-header">TRACKS <span id="arrangement-track-count">01</span></div>
+                      <div class="arrangement-track-labels" id="arrangement-track-labels"></div>
+                      <button class="add-track-button" id="add-track-button" type="button">＋ Add audio track</button>
+                    </div>
+                    <div class="timeline-scroll" id="timeline-scroll">
+                      <div class="timeline-content" id="timeline-content"></div>
                     </div>
                   </div>
-                  <div class="piano-roll-footer">Click to add · Drag to move · Drag right edge to resize · Delete removes selected note · Drum kits: C2 kick, D2 snare, D♯2 clap, F♯2 closed hat, A♯2 open hat</div>
                 </section>
               </div>
             </div>

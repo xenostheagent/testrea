@@ -229,9 +229,6 @@ kbd { border: 1px solid #393a3f; border-radius: 3px; padding: 2px 4px; color: #b
 .source-add-button { width: 100%; height: 29px; margin-top: 9px; border: 1px dashed #393a3f; border-radius: 5px; background: transparent; color: #9b9c9e; font-size: 9px; cursor: pointer; }
 .source-add-button:hover { border-color: #70765a; color: var(--accent); }
 .arrangement-main { min-width: 0; }
-.arrangement-main > .workspace-tool-panel, .arrangement-main > .piano-roll-view { width: 100%; max-width: none; height: 100%; min-height: 270px; margin: 0; overflow: auto; }
-.arrangement-main > .workspace-tool-panel[hidden], .arrangement-main > .piano-roll-view[hidden] { display: none; }
-.arrangement-main > .workspace-tool-panel .section-heading { padding-top: 20px; }
 .arrangement-editor { display: grid; grid-template-columns: 154px minmax(0, 1fr); min-height: 260px; }
 .arrangement-track-column { border-right: 1px solid var(--stroke); background: #1b1c1f; }
 .arrangement-track-header { height: 43px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--stroke); padding: 0 14px; color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: .8px; }
@@ -464,10 +461,19 @@ body:not(.is-beat-grid-open) #export-button { display: none; }
 .add-pattern-instrument-button { min-width: 30px; justify-content: center; padding: 0 7px; color: var(--accent); }
 .add-pattern-button { border-color: rgba(211,243,107,.26); color: var(--accent); }
 .arrangement-card { display: flex; min-height: 0; flex: 1; flex-direction: column; border-radius: 4px; box-shadow: none; }
-.arrangement-card.is-tool-open .arrangement-footer { display: none; }
 .arrangement-layout { display: block; min-height: 0; flex: 1; }
-.arrangement-main { height: 100%; }
-.arrangement-editor { height: 100%; min-height: 0; grid-template-columns: 158px minmax(0, 1fr); }
+.arrangement-main { display: flex; height: 100%; min-height: 0; flex-direction: column; }
+.workspace-area { display: flex; min-height: 0; flex: 0 0 42%; flex-direction: column; border-bottom: 1px solid var(--stroke); }
+.workspace-area-heading, .track-view-heading { height: 25px; flex: 0 0 25px; display: flex; align-items: center; border-bottom: 1px solid #25262a; padding: 0 12px; color: #77787e; font-family: var(--mono); font-size: 8px; letter-spacing: .8px; }
+.workspace-content { position: relative; min-height: 0; flex: 1; overflow: hidden; background: #17181b; }
+.workspace-content > .arrangement-empty { min-height: 0; height: 100%; padding: 12px; }
+.workspace-content > .workspace-tool-panel, .workspace-content > .piano-roll-view { width: 100%; max-width: none; height: 100%; min-height: 0; margin: 0; overflow: auto; }
+.workspace-content > .workspace-tool-panel[hidden], .workspace-content > .piano-roll-view[hidden] { display: none; }
+.workspace-content > .workspace-tool-panel { padding: 0 10px 10px; }
+.workspace-content > .workspace-tool-panel .section-heading { padding-top: 16px; }
+.track-view-area { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.track-view-heading { border-top: 0; }
+.arrangement-editor { height: auto; min-height: 0; flex: 1; grid-template-columns: 158px minmax(0, 1fr); }
 .arrangement-track-column { display: flex; min-height: 0; flex-direction: column; overflow: hidden; }
 .arrangement-track-labels { min-height: 0; flex: 1; overflow: hidden; }
 .timeline-scroll { min-width: 0; height: 100%; min-height: 0; overflow: auto; }
@@ -506,6 +512,10 @@ body:not(.is-beat-grid-open) #export-button { display: none; }
   .arrangement-heading { align-items: flex-start; flex-direction: column; gap: 4px; padding: 6px 2px; }
   .arrangement-actions { width: 100%; justify-content: flex-start; }
   .arrangement-editor { grid-template-columns: 132px minmax(0, 1fr); }
+}
+
+@media (max-height: 650px) {
+  .workspace-area { flex-basis: 38%; }
 }
 
 @media (max-width: 500px) {
