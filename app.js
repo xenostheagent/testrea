@@ -68,6 +68,8 @@
   const TRACK_COLORS = ["#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd"];
   const state = {
     tracks: [],
+    patterns: [],
+    selectedPatternId: null,
     arrangementTracks: [],
     patternClips: [],
     steps: 16,
@@ -120,6 +122,104 @@
     });
     tracks.forEach(ensureSequencerTrackAudio);
     return tracks;
+  }
+
+  function getPattern(patternId = state.selectedPatternId) {
+    return state.patterns.find((pattern) => pattern.id === patternId) || null;
+  }
+
+  function makePatternSnapshot(id, name) {
+    const cells = {};
+    const variants = {};
+    state.tracks.forEach((track) => {
+      cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
+      if (SOUND_VARIANTS[track.kind]) variants[track.id] = track.variant || "classic";
+    });
+    return { id, name, steps: state.steps, cells, variants };
+  }
+
+  function captureCurrentPattern() {
+    const pattern = getPattern();
+    if (!pattern) return;
+    pattern.steps = state.steps;
+    pattern.cells = {};
+    pattern.variants = {};
+    state.tracks.forEach((track) => {
+      pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
+      if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
+    });
+  }
+
+  function applyPattern(pattern) {
+    state.selectedPatternId = pattern.id;
+    state.steps = pattern.steps === 32 ? 32 : 16;
+    state.tracks.forEach((track) => {
+      track.cells = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
+      const variant = pattern.variants?.[track.id];
+      if (SOUND_VARIANTS[track.kind]) {
+        track.variant = SOUND_VARIANTS[track.kind].some((sound) => sound.id === variant) ? variant : "classic";
+      }
+    });
+    $("#arrangement-pattern-length").value = String(state.steps);
+    $("#bar-label").textContent = state.steps === 16 ? "1 BAR" : "2 BARS";
+    document.querySelectorAll(".length-button").forEach((button) => {
+      const selected = Number(button.dataset.steps) === state.steps;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    renderHeader();
+  }
+
+  function renderPatternSelectors() {
+    [$("#sequencer-pattern-select"), $("#arrangement-pattern-select")].forEach((select) => {
+      select.replaceChildren();
+      state.patterns.forEach((pattern) => {
+        const option = document.createElement("option");
+        option.value = pattern.id;
+        option.textContent = pattern.name;
+        select.append(option);
+      });
+      select.value = state.selectedPatternId;
+    });
+  }
+
+  function selectPattern(patternId) {
+    const pattern = getPattern(patternId);
+    if (!pattern || pattern.id === state.selectedPatternId) return;
+    captureCurrentPattern();
+    applyPattern(pattern);
+    state.selectedPreset = null;
+    renderTracks();
+    renderPresets();
+    renderPatternSelectors();
+    updateArrangementLength();
+    if (state.view === "arrangement") renderArrangement();
+    saveState();
+  }
+
+  function createPattern() {
+    captureCurrentPattern();
+    const source = getPattern();
+    if (!source) return;
+    let number = state.patterns.length + 1;
+    while (state.patterns.some((pattern) => pattern.name === `Pattern ${number}`)) number += 1;
+    const pattern = {
+      id: makeId(),
+      name: `Pattern ${number}`,
+      steps: source.steps,
+      cells: Object.fromEntries(Object.entries(source.cells).map(([trackId, cells]) => [trackId, [...cells]])),
+      variants: { ...source.variants },
+    };
+    state.patterns.push(pattern);
+    applyPattern(pattern);
+    state.selectedPreset = null;
+    renderTracks();
+    renderPresets();
+    renderPatternSelectors();
+    updateArrangementLength();
+    if (state.view === "arrangement") renderArrangement();
+    saveState();
+    showToast(`${pattern.name} created from the selected pattern`);
   }
 
   function renderHeader() {
@@ -303,8 +403,13 @@
 
   function setLength(steps) {
     state.steps = steps;
+    const activePattern = getPattern();
+    if (activePattern) activePattern.steps = steps;
     $("#arrangement-pattern-length").value = String(steps);
-    state.patternClips.forEach((clip) => { clip.startBar = Math.min(clip.startBar, maxPatternStartBar()); });
+    state.patternClips.forEach((clip) => {
+      const pattern = getPattern(clip.patternId);
+      if (pattern) clip.startBar = Math.min(clip.startBar, maxPatternStartBar(pattern.steps));
+    });
     document.querySelectorAll(".length-button").forEach((button) => {
       const selected = Number(button.dataset.steps) === steps;
       button.classList.toggle("is-selected", selected);
@@ -350,10 +455,12 @@
     return 60 / state.bpm / 4;
   }
 
-  function scheduleStep(step, time) {
+  function scheduleStep(step, time, pattern = null) {
     state.tracks.forEach((track) => {
-      if (track.cells[step] && !track.muted && (!state.tracks.some((item) => item.solo) || track.solo)) {
-        triggerTrack(track, time, step);
+      const cells = pattern ? pattern.cells?.[track.id] || [] : track.cells;
+      const variant = pattern ? pattern.variants?.[track.id] || "classic" : track.variant;
+      if (cells[step] && !track.muted && (!state.tracks.some((item) => item.solo) || track.solo)) {
+        triggerTrack(track, time, step, variant);
       }
     });
     if (state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
@@ -382,9 +489,10 @@
       (state.view !== "arrangement" || state.nextStepTime < state.playbackEndTime)
     ) {
       const clockStep = state.stepIndex;
-      const step = state.view === "arrangement" ? arrangementStepAtTime(state.nextStepTime) : state.stepIndex;
+      const arrangementStep = state.view === "arrangement" ? arrangementStepAtTime(state.nextStepTime) : null;
+      const step = state.view === "arrangement" ? arrangementStep?.step ?? -1 : state.stepIndex;
       const swingOffset = (step >= 0 ? step : clockStep) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
-      if (step >= 0) scheduleStep(step, state.nextStepTime + swingOffset);
+      if (step >= 0) scheduleStep(step, state.nextStepTime + swingOffset, arrangementStep?.pattern);
       else if (state.metronome && clockStep % 4 === 0) triggerClick(state.nextStepTime, clockStep % 16 === 0);
       state.nextStepTime += getStepDuration();
       state.stepIndex = (clockStep + 1) % state.steps;
@@ -393,9 +501,16 @@
 
   function arrangementStepAtTime(time) {
     const barPosition = state.playbackStartBar + (time - state.playbackStartTime) / (240 / state.bpm);
-    const patternBars = state.steps / 16;
-    const clip = state.patternClips.find((item) => barPosition >= item.startBar && barPosition < item.startBar + patternBars);
-    return clip ? Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % state.steps : -1;
+    const clip = state.patternClips.find((item) => {
+      const pattern = getPattern(item.patternId);
+      return pattern && barPosition >= item.startBar && barPosition < item.startBar + pattern.steps / 16;
+    });
+    const pattern = clip && getPattern(clip.patternId);
+    if (!clip || !pattern) return null;
+    return {
+      pattern,
+      step: Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % pattern.steps,
+    };
   }
 
   function setPlayhead(step) {
@@ -408,8 +523,8 @@
     return window.crypto?.randomUUID?.() || `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   }
 
-  function maxPatternStartBar() {
-    return Math.max(0, MAX_ARRANGEMENT_BARS - state.steps / 16);
+  function maxPatternStartBar(steps = state.steps) {
+    return Math.max(0, MAX_ARRANGEMENT_BARS - steps / 16);
   }
 
   function isAudioFile(file) {
@@ -455,6 +570,9 @@
             buffer,
           });
           state.tracks.push(track);
+          state.patterns.forEach((pattern) => {
+            pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
+          });
           imported.push({ track, file });
         } catch {
           failures.push(file.name);
@@ -483,6 +601,10 @@
     if (state.isPlaying) stopPlayback();
     track.gainNode?.disconnect();
     state.tracks = state.tracks.filter((item) => item !== track);
+    state.patterns.forEach((pattern) => {
+      delete pattern.cells[track.id];
+      delete pattern.variants[track.id];
+    });
     renderTracks();
     if (state.view === "arrangement") renderArrangement();
     updateTrackGains();
@@ -527,7 +649,10 @@
     const secondsPerBar = 240 / state.bpm;
     const clipEnd = state.arrangementTracks.reduce((latest, track) => {
       return track.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.buffer.duration / secondsPerBar), latest);
-    }, state.patternClips.reduce((end, clip) => Math.max(end, clip.startBar + state.steps / 16), 8));
+    }, state.patternClips.reduce((end, clip) => {
+      const pattern = getPattern(clip.patternId);
+      return pattern ? Math.max(end, clip.startBar + pattern.steps / 16) : end;
+    }, 8));
     state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, Math.max(state.arrangementBars, Math.ceil(clipEnd)));
     if (state.playbackStartTime && state.isPlaying && state.view === "arrangement") {
       state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - state.playbackStartBar) * secondsPerBar;
@@ -541,6 +666,7 @@
     editor.hidden = false;
     $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.patternClips.length);
     $("#arrangement-track-count").textContent = String(state.arrangementTracks.length + 1).padStart(2, "0");
+    renderPatternSelectors();
     renderInstrumentBrowser();
     renderRecordingBrowser();
 
@@ -690,7 +816,13 @@
   }
 
   function addPatternClip(startBar = state.arrangementCursor) {
-    state.patternClips.push({ id: makeId(), startBar: Math.max(0, Math.min(maxPatternStartBar(), Math.floor(startBar))) });
+    const pattern = getPattern();
+    if (!pattern) return;
+    state.patternClips.push({
+      id: makeId(),
+      patternId: pattern.id,
+      startBar: Math.max(0, Math.min(maxPatternStartBar(pattern.steps), Math.floor(startBar))),
+    });
     state.patternClips.sort((left, right) => left.startBar - right.startBar);
     updateArrangementLength();
     renderArrangement();
@@ -701,7 +833,9 @@
   function movePatternClip(clipId, startBar) {
     const clip = state.patternClips.find((item) => item.id === clipId);
     if (!clip) return;
-    clip.startBar = Math.max(0, Math.min(maxPatternStartBar(), Math.floor(startBar)));
+    const pattern = getPattern(clip.patternId);
+    if (!pattern) return;
+    clip.startBar = Math.max(0, Math.min(maxPatternStartBar(pattern.steps), Math.floor(startBar)));
     state.patternClips.sort((left, right) => left.startBar - right.startBar);
     updateArrangementLength();
     renderArrangement();
@@ -828,16 +962,19 @@
   function createPatternClip(clip) {
     const element = document.createElement("div");
     element.className = "drum-arrangement-clip";
+    const pattern = getPattern(clip.patternId) || getPattern();
+    const steps = pattern?.steps || state.steps;
+    const patternName = pattern?.name || "Drum pattern";
     element.draggable = true;
     element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
-    element.style.width = `${Math.max(28, state.steps / 16 * BAR_WIDTH - 8)}px`;
-    element.setAttribute("aria-label", `Drum pattern, bar ${clip.startBar + 1}; drag to move`);
+    element.style.width = `${Math.max(28, steps / 16 * BAR_WIDTH - 8)}px`;
+    element.setAttribute("aria-label", `${patternName}, bar ${clip.startBar + 1}; drag to move`);
     const icon = document.createElement("span");
     icon.className = "pattern-clip-icon";
     icon.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg>';
     const text = document.createElement("span");
     text.className = "pattern-clip-name";
-    text.textContent = `DRUM PATTERN · ${state.steps / 16} BAR${state.steps > 16 ? "S" : ""}`;
+    text.textContent = `${patternName.toUpperCase()} · ${steps / 16} BAR${steps > 16 ? "S" : ""}`;
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "pattern-clip-remove";
@@ -1120,6 +1257,12 @@
               buffer,
             });
             state.tracks.push(track);
+            state.patterns.forEach((pattern) => {
+              if (!pattern.cells[track.id]) {
+                pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) =>
+                  pattern.id === state.selectedPatternId && record.cells?.[index] === true);
+              }
+            });
           } else {
             track.sample = { name: record.fileName || record.trackName, buffer };
             ensureSequencerTrackAudio(track);
@@ -1176,7 +1319,7 @@
     });
   }
 
-  function triggerTrack(track, time, step) {
+  function triggerTrack(track, time, step, variant = track.variant) {
     const context = state.audioContext;
     const output = track.gainNode;
     if (track.sample) {
@@ -1190,12 +1333,12 @@
       return;
     }
     switch (track.kind) {
-      case "kick": playKick(context, output, time, step, track.variant); break;
-      case "snare": playSnare(context, output, time, track.variant); break;
-      case "clap": playClap(context, output, time, track.variant); break;
-      case "hat": playHat(context, output, time, false, track.variant); break;
-      case "openhat": playHat(context, output, time, true, track.variant); break;
-      case "rim": playRim(context, output, time, track.variant); break;
+      case "kick": playKick(context, output, time, step, variant); break;
+      case "snare": playSnare(context, output, time, variant); break;
+      case "clap": playClap(context, output, time, variant); break;
+      case "hat": playHat(context, output, time, false, variant); break;
+      case "openhat": playHat(context, output, time, true, variant); break;
+      case "rim": playRim(context, output, time, variant); break;
       default: break;
     }
   }
@@ -1411,6 +1554,7 @@
   }
 
   function saveState() {
+    captureCurrentPattern();
     const saveDot = $(".save-dot");
     $("#save-state").textContent = "Saving…";
     saveDot.style.background = "#c8a95a";
@@ -1419,6 +1563,14 @@
       swing: state.swing,
       steps: state.steps,
       selectedPreset: state.selectedPreset,
+      selectedPatternId: state.selectedPatternId,
+      patterns: state.patterns.map((pattern) => ({
+        id: pattern.id,
+        name: pattern.name,
+        steps: pattern.steps,
+        cells: Object.fromEntries(Object.entries(pattern.cells).map(([trackId, cells]) => [trackId, [...cells]])),
+        variants: { ...pattern.variants },
+      })),
       tracks: state.tracks.map((track) => ({
         id: track.id,
         name: track.name,
@@ -1431,7 +1583,7 @@
         variant: track.variant,
         sampleName: track.sample?.name || null,
       })),
-      patternClips: state.patternClips.map(({ id, startBar }) => ({ id, startBar })),
+      patternClips: state.patternClips.map(({ id, patternId, startBar }) => ({ id, patternId, startBar })),
       arrangementBars: state.arrangementBars,
       arrangementCursor: state.arrangementCursor,
       view: state.view,
@@ -1459,12 +1611,8 @@
       if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(8, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
       if (Number.isFinite(saved.arrangementCursor)) state.arrangementCursor = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, saved.arrangementCursor));
       if (saved.view === "sequencer" || saved.view === "arrangement") state.view = saved.view;
-      if (Array.isArray(saved.patternClips)) {
-        state.patternClips = saved.patternClips
-          .filter((clip) => typeof clip?.id === "string" && Number.isFinite(clip.startBar))
-          .map((clip) => ({ id: clip.id, startBar: Math.max(0, Math.min(maxPatternStartBar(), Math.floor(clip.startBar))) }));
-      }
-      if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
+      if (saved.selectedPreset === null) state.selectedPreset = null;
+      else if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
       if (Array.isArray(saved.tracks)) {
         saved.tracks.forEach((savedTrack) => {
           let track = state.tracks.find((item) => item.id === savedTrack.id);
@@ -1490,6 +1638,51 @@
           track.solo = savedTrack.solo === true;
         });
       }
+      if (Array.isArray(saved.patterns)) {
+        const restoredPatterns = saved.patterns
+          .filter((pattern) => typeof pattern?.id === "string" && typeof pattern.name === "string")
+          .map((pattern) => {
+            const cells = {};
+            const variants = {};
+            state.tracks.forEach((track) => {
+              cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
+              const variant = pattern.variants?.[track.id];
+              if (SOUND_VARIANTS[track.kind]?.some((sound) => sound.id === variant)) variants[track.id] = variant;
+            });
+            return {
+              id: pattern.id,
+              name: pattern.name,
+              steps: pattern.steps === 32 ? 32 : 16,
+              cells,
+              variants,
+            };
+          });
+        state.patterns = restoredPatterns.length
+          ? restoredPatterns
+          : [makePatternSnapshot(state.patterns[0]?.id || makeId(), state.patterns[0]?.name || "Pattern 1")];
+      } else {
+        const initialPattern = state.patterns[0];
+        state.patterns = [makePatternSnapshot(initialPattern?.id || makeId(), initialPattern?.name || "Pattern 1")];
+      }
+      if (!state.patterns.length) state.patterns = [makePatternSnapshot(makeId(), "Pattern 1")];
+      state.selectedPatternId = state.patterns.some((pattern) => pattern.id === saved.selectedPatternId)
+        ? saved.selectedPatternId
+        : state.patterns[0].id;
+      const activePattern = getPattern();
+      if (activePattern) applyPattern(activePattern);
+      if (Array.isArray(saved.patternClips)) {
+        state.patternClips = saved.patternClips
+          .filter((clip) => typeof clip?.id === "string" && Number.isFinite(clip.startBar))
+          .map((clip) => {
+            const patternId = state.patterns.some((pattern) => pattern.id === clip.patternId) ? clip.patternId : state.selectedPatternId;
+            const pattern = getPattern(patternId);
+            return {
+              id: clip.id,
+              patternId,
+              startBar: Math.max(0, Math.min(maxPatternStartBar(pattern?.steps), Math.floor(clip.startBar))),
+            };
+          });
+      }
     } catch {
       try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be disabled. */ }
     }
@@ -1504,9 +1697,11 @@
       swing: state.swing,
       bars: state.steps / 16,
       steps: state.steps,
+      pattern: getPattern()?.name || "Pattern",
       tracks: state.tracks.map((track) => ({
         name: track.name,
         sample: track.sample?.name || null,
+        sound: track.variant || null,
         steps: track.cells.slice(0, state.steps).map((active) => active ? 1 : 0),
       })),
     };
@@ -1576,12 +1771,16 @@
 
       const stepDuration = 60 / state.bpm / 4;
       state.patternClips.forEach((clip) => {
-        for (let step = 0; step < state.steps; step += 1) {
+        const pattern = getPattern(clip.patternId);
+        if (!pattern) return;
+        for (let step = 0; step < pattern.steps; step += 1) {
           const time = clip.startBar * secondsPerBar + step * stepDuration +
             (step % 2 === 1 ? stepDuration * (state.swing / 100) : 0);
           if (time >= duration) continue;
           state.tracks.forEach((track) => {
-            if (track.cells[step] && !track.muted && (!hasSolo || track.solo)) triggerTrack(track, time, step);
+            if (pattern.cells[track.id]?.[step] && !track.muted && (!hasSolo || track.solo)) {
+              triggerTrack(track, time, step, pattern.variants[track.id] || track.variant);
+            }
           });
           if (state.metronome && step % 4 === 0) triggerClick(time, step === 0);
         }
@@ -1726,7 +1925,11 @@
     $("#timeline-scroll").addEventListener("scroll", (event) => {
       $("#arrangement-track-labels").scrollTop = event.currentTarget.scrollTop;
     });
+    $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
+    $("#arrangement-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#arrangement-pattern-length").addEventListener("change", (event) => setLength(Number(event.target.value)));
+    $("#new-pattern-button").addEventListener("click", createPattern);
+    $("#new-pattern-sequencer-button").addEventListener("click", createPattern);
     $("#add-pattern-button").addEventListener("click", () => addPatternClip());
     $("#source-browser-button").addEventListener("click", () => $("#source-browser-dialog").showModal());
     $("#source-browser-close").addEventListener("click", () => $("#source-browser-dialog").close());
@@ -1785,9 +1988,13 @@
       });
       state.tracks.forEach((track) => track.gainNode?.disconnect());
       state.tracks = makeTracks();
+      state.steps = 16;
+      state.patterns = [makePatternSnapshot(makeId(), "Pattern 1")];
+      state.selectedPatternId = state.patterns[0].id;
+      renderPatternSelectors();
+      state.patternClips = [];
       state.bpm = 124;
       state.swing = 0;
-      state.steps = 16;
       state.selectedPreset = "warehouse";
       tempoValue.textContent = "124";
       swingSlider.value = "0";
@@ -1810,6 +2017,9 @@
 
   function initialize() {
     state.tracks = makeTracks();
+    const initialPattern = makePatternSnapshot(makeId(), "Pattern 1");
+    state.patterns = [initialPattern];
+    state.selectedPatternId = initialPattern.id;
     restoreState();
     tempoValue.textContent = String(state.bpm);
     swingSlider.value = String(state.swing);

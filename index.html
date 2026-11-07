@@ -90,6 +90,11 @@
               <p class="section-subtitle">Click a step to add a hit. Press play and make it move.</p>
             </div>
             <div class="sequencer-actions">
+              <label class="pattern-select-control">
+                <span>PATTERN</span>
+                <select id="sequencer-pattern-select" aria-label="Select pattern to edit"></select>
+              </label>
+              <button class="quiet-button" id="new-pattern-sequencer-button" type="button">＋ New</button>
               <button class="quiet-button" id="clear-button" type="button">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6h11m-9.5 0 .6 10h5.8l.6-10M8 6V4h4v2m-3 3v4m2-4v4" /></svg>
                 Clear
@@ -138,6 +143,10 @@
             </div>
             <div class="arrangement-actions">
               <button class="quiet-button" id="source-browser-button" type="button">Browser</button>
+              <label class="pattern-select-control">
+                <span>PATTERN</span>
+                <select id="arrangement-pattern-select" aria-label="Select pattern"></select>
+              </label>
               <label class="repeater-control">
                 <span>STEP PATTERN</span>
                 <select id="arrangement-pattern-length" aria-label="Step pattern length">
@@ -145,7 +154,8 @@
                   <option value="32">2 BARS</option>
                 </select>
               </label>
-              <button class="quiet-button add-pattern-button" id="add-pattern-button" type="button">＋ Add pattern</button>
+              <button class="quiet-button" id="new-pattern-button" type="button">＋ New pattern</button>
+              <button class="quiet-button add-pattern-button" id="add-pattern-button" type="button">Add to song</button>
               <button class="quiet-button" id="add-bars-button" type="button">+ 4 bars</button>
               <button class="quiet-button record-audio-button" id="record-audio-button" type="button" aria-pressed="false">
                 <span class="record-dot"></span>
