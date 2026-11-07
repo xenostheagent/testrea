@@ -534,7 +534,7 @@
     return 60 / state.bpm / 4;
   }
 
-  function scheduleStep(step, time, pattern = null) {
+  function scheduleStep(step, time, pattern = null, playMetronome = true) {
     const activeTracks = pattern
       ? state.tracks.filter((track) => getPatternTrackIds(pattern).includes(track.id))
       : state.tracks;
@@ -546,7 +546,7 @@
         triggerTrack(track, time, step, variant);
       }
     });
-    if (state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
+    if (playMetronome && state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
 
     const displayDelay = Math.max(0, (time - state.audioContext.currentTime) * 1000);
     const timerId = window.setTimeout(() => {
@@ -572,28 +572,33 @@
       (state.view !== "arrangement" || state.nextStepTime < state.playbackEndTime)
     ) {
       const clockStep = state.stepIndex;
-      const arrangementStep = state.view === "arrangement" ? arrangementStepAtTime(state.nextStepTime) : null;
-      const step = state.view === "arrangement" ? arrangementStep?.step ?? -1 : state.stepIndex;
+      const arrangementSteps = state.view === "arrangement" ? arrangementStepsAtTime(state.nextStepTime) : null;
+      const step = state.view === "arrangement" ? arrangementSteps[0]?.step ?? -1 : state.stepIndex;
       const swingOffset = (step >= 0 ? step : clockStep) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
-      if (step >= 0) scheduleStep(step, state.nextStepTime + swingOffset, arrangementStep?.pattern);
-      else if (state.metronome && clockStep % 4 === 0) triggerClick(state.nextStepTime, clockStep % 16 === 0);
+      if (state.view === "arrangement") {
+        arrangementSteps.forEach(({ pattern, step: patternStep }) =>
+          scheduleStep(patternStep, state.nextStepTime + swingOffset, pattern, false));
+        if (state.metronome && (step >= 0 ? step : clockStep) % 4 === 0) {
+          triggerClick(state.nextStepTime + swingOffset, (step >= 0 ? step : clockStep) % 16 === 0);
+        }
+      } else {
+        scheduleStep(state.stepIndex, state.nextStepTime + swingOffset);
+      }
       state.nextStepTime += getStepDuration();
       state.stepIndex = (clockStep + 1) % state.steps;
     }
   }
 
-  function arrangementStepAtTime(time) {
+  function arrangementStepsAtTime(time) {
     const barPosition = state.playbackStartBar + (time - state.playbackStartTime) / (240 / state.bpm);
-    const clip = state.patternClips.find((item) => {
-      const pattern = getPattern(item.patternId);
-      return pattern && barPosition >= item.startBar && barPosition < item.startBar + pattern.steps / 16;
+    return state.patternClips.flatMap((clip) => {
+      const pattern = getPattern(clip.patternId);
+      if (!pattern || barPosition < clip.startBar || barPosition >= clip.startBar + pattern.steps / 16) return [];
+      return [{
+        pattern,
+        step: Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % pattern.steps,
+      }];
     });
-    const pattern = clip && getPattern(clip.patternId);
-    if (!clip || !pattern) return null;
-    return {
-      pattern,
-      step: Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % pattern.steps,
-    };
   }
 
   function setPlayhead(step) {
@@ -752,7 +757,6 @@
     $("#arrangement-empty").hidden = true;
     editor.hidden = false;
     $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.patternClips.length);
-    $("#arrangement-track-count").textContent = String(state.arrangementTracks.length + 1).padStart(2, "0");
     renderPatternSelectors();
     renderInstrumentBrowser();
     renderRecordingBrowser();
@@ -776,14 +780,22 @@
     }
     content.append(ruler);
 
-    const drumLabel = document.createElement("div");
-    drumLabel.className = "arrangement-label";
-    drumLabel.innerHTML = '<span class="track-color" style="--track-color:var(--accent)"></span><div class="arrangement-label-info"><div class="arrangement-label-name">Drum pattern</div><div class="arrangement-label-type">Sequencer loop</div></div>';
-    labels.append(drumLabel);
+    const arrangedPatternIds = new Set(state.patternClips.map((clip) => clip.patternId));
+    const patternTracks = state.patterns.filter((pattern) =>
+      pattern.id === state.selectedPatternId || arrangedPatternIds.has(pattern.id));
+    patternTracks.forEach((pattern) => {
+      const label = document.createElement("div");
+      label.className = "arrangement-label";
+      label.innerHTML = `<span class="track-color" style="--track-color:var(--accent)"></span><div class="arrangement-label-info"><div class="arrangement-label-name"></div><div class="arrangement-label-type">Beat pattern · ${getPatternTrackIds(pattern).length} instruments</div></div>`;
+      label.querySelector(".arrangement-label-name").textContent = pattern.name;
+      labels.append(label);
 
-    const drumLane = createTimelineLane("drums", width);
-    state.patternClips.forEach((clip) => drumLane.append(createPatternClip(clip)));
-    content.append(drumLane);
+      const lane = createTimelineLane(`pattern:${pattern.id}`, width);
+      state.patternClips
+        .filter((clip) => clip.patternId === pattern.id)
+        .forEach((clip) => lane.append(createPatternClip(clip)));
+      content.append(lane);
+    });
 
     state.arrangementTracks.forEach((track) => {
       const label = document.createElement("div");
@@ -841,6 +853,7 @@
       track.clips.forEach((clip) => lane.append(createAudioClip(track, clip)));
       content.append(lane);
     });
+    $("#arrangement-track-count").textContent = String(patternTracks.length + state.arrangementTracks.length).padStart(2, "0");
     updateArrangementCursorMarker();
   }
 
@@ -962,12 +975,13 @@
       event.preventDefault();
       lane.classList.remove("is-drop-target");
       const startBar = barAtPointer(event, lane);
+      const isPatternLane = trackId.startsWith("pattern:");
       const files = Array.from(event.dataTransfer?.files || []);
       if (files.length) {
-        for (const file of files) await importRecording(file, trackId === "drums" ? null : trackId, startBar);
+        for (const file of files) await importRecording(file, isPatternLane ? null : trackId, startBar);
         return;
       }
-      if (trackId === "drums") {
+      if (isPatternLane) {
         const patternSource = event.dataTransfer?.getData("application/x-pulsegrid-pattern-source");
         if (patternSource) {
           try {
