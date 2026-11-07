@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#111214" />
-    <title>Pulsegrid — Drum sequencer</title>
+    <title>Pulsegrid — Browser DAW</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -131,13 +131,21 @@
         </section>
 
         <section class="arrangement-workspace" id="arrangement-view" role="tabpanel" aria-labelledby="arrangement-tab" hidden>
-          <div class="section-heading arrangement-heading">
-            <div>
-              <div class="eyebrow">MULTITRACK ARRANGEMENT <span class="heading-dot"></span> <span id="arrangement-bar-label">8 BARS</span></div>
-              <h1>Arrange your tracks<span class="heading-period">.</span></h1>
-              <p class="section-subtitle">Import recordings, then drag clips to line them up with your beat.</p>
+          <div class="arrangement-heading">
+            <div class="arrangement-title">
+              <h1>Arrangement</h1>
+              <span class="arrangement-bar-label" id="arrangement-bar-label">8 BARS</span>
             </div>
             <div class="arrangement-actions">
+              <button class="quiet-button" id="source-browser-button" type="button">Browser</button>
+              <label class="repeater-control">
+                <span>STEP PATTERN</span>
+                <select id="arrangement-pattern-length" aria-label="Step pattern length">
+                  <option value="16">1 BAR</option>
+                  <option value="32">2 BARS</option>
+                </select>
+              </label>
+              <button class="quiet-button add-pattern-button" id="add-pattern-button" type="button">＋ Add pattern</button>
               <button class="quiet-button" id="add-bars-button" type="button">+ 4 bars</button>
               <button class="quiet-button record-audio-button" id="record-audio-button" type="button" aria-pressed="false">
                 <span class="record-dot"></span>
@@ -151,30 +159,17 @@
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m0 0L6.5 6.5M10 3l3.5 3.5M4 12v4h12v-4" /></svg>
                 Add recordings
               </button>
+              <button class="quiet-button" id="arrangement-clear-button" type="button">Clear</button>
             </div>
           </div>
 
           <div class="arrangement-card" id="arrangement-card">
             <div class="arrangement-layout">
-              <aside class="source-sidebar" aria-label="Instrument and audio sources">
-                <div class="source-sidebar-heading">SOURCES <span>DRAG TO ARRANGE</span></div>
-                <div class="source-section-label">PATTERNS</div>
-                <button class="pattern-source" id="pattern-source" type="button" draggable="true">
-                  <span class="pattern-source-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg></span>
-                  <span><strong>Drum repeater</strong><small>Current step pattern</small></span>
-                  <span class="source-grip" aria-hidden="true">⠿</span>
-                </div>
-                <div class="source-section-label instrument-section-label">DRUM SOUNDS</div>
-                <div class="instrument-browser" id="instrument-browser"></div>
-                <div class="source-section-label recordings-section-label">RECORDINGS <span id="recording-source-count">0</span></div>
-                <div class="recording-browser" id="recording-browser"></div>
-                <button class="source-add-button" id="side-add-recording" type="button">＋ Import audio</button>
-              </aside>
               <div class="arrangement-main">
                 <div class="arrangement-empty" id="arrangement-empty">
                   <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
                   <h2>Start arranging your song</h2>
-                  <p>Drag the drum repeater into the timeline, or import recordings and place them on their own tracks.</p>
+                  <p>Add a step pattern or import recordings, then place clips on the timeline.</p>
                   <button class="quiet-button" id="empty-import-button" type="button">＋ Add audio files</button>
                 </div>
                 <div class="arrangement-editor" id="arrangement-editor" hidden>
@@ -191,15 +186,21 @@
             </div>
             <div class="arrangement-footer">
               <span><span class="legend-swatch"></span>DRUM PATTERN <span class="audio-legend"></span>AUDIO CLIP</span>
-              <span><kbd>DRAG</kbd> add / move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
+              <span><kbd>CLICK</kbd> add <span class="hint-divider">·</span> <kbd>DRAG</kbd> move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
             </div>
           </div>
-
-          <footer class="bottom-bar arrangement-bottom">
-            <span><span class="footer-pulse"></span>Drop audio files onto a track, or import several at once.</span>
-            <button id="arrangement-clear-button" type="button">Clear arrangement</button>
-          </footer>
         </section>
+
+        <dialog class="source-browser-dialog" id="source-browser-dialog" aria-label="Instrument and audio browser">
+          <aside class="source-sidebar">
+            <div class="source-sidebar-heading">SOURCES <button id="source-browser-close" type="button" aria-label="Close browser">×</button></div>
+            <div class="source-section-label instrument-section-label">DRUM SOUNDS</div>
+            <div class="instrument-browser" id="instrument-browser"></div>
+            <div class="source-section-label recordings-section-label">RECORDINGS <span id="recording-source-count">0</span></div>
+            <div class="recording-browser" id="recording-browser"></div>
+            <button class="source-add-button" id="side-add-recording" type="button">＋ Import audio</button>
+          </aside>
+        </dialog>
       </main>
       <input id="sample-input" type="file" accept="audio/*" hidden />
       <input id="recording-input" type="file" accept="audio/*" multiple hidden />

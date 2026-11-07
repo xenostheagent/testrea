@@ -71,7 +71,7 @@
     arrangementTracks: [],
     patternClips: [],
     steps: 16,
-    view: "sequencer",
+    view: "arrangement",
     bpm: 124,
     swing: 0,
     arrangementBars: 8,
@@ -283,6 +283,7 @@
     });
     renderTracks();
     renderPresets();
+    $("#arrangement-pattern-length").value = String(state.steps);
     updateArrangementLength();
     if (state.view === "arrangement") renderArrangement();
     saveState();
@@ -291,6 +292,7 @@
 
   function setLength(steps) {
     state.steps = steps;
+    $("#arrangement-pattern-length").value = String(steps);
     state.patternClips.forEach((clip) => { clip.startBar = Math.min(clip.startBar, maxPatternStartBar()); });
     document.querySelectorAll(".length-button").forEach((button) => {
       const selected = Number(button.dataset.steps) === steps;
@@ -589,6 +591,7 @@
         if (!clip) return;
         setArrangementCursor(clip.startBar);
         $("#timeline-scroll").scrollLeft = clip.startBar * BAR_WIDTH;
+        $("#source-browser-dialog").close();
       });
       browser.append(item);
     });
@@ -635,8 +638,7 @@
       event.preventDefault();
       lane.classList.add("is-drop-target");
       if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = event.dataTransfer.files.length ||
-          Array.from(event.dataTransfer.types).includes("application/x-pulsegrid-pattern-source") ? "copy" : "move";
+        event.dataTransfer.dropEffect = event.dataTransfer.files.length ? "copy" : "move";
       }
     });
     lane.addEventListener("dragleave", (event) => {
@@ -652,11 +654,6 @@
         return;
       }
       if (trackId === "drums") {
-        const patternSource = event.dataTransfer?.getData("application/x-pulsegrid-pattern-source");
-        if (patternSource) {
-          addPatternClip(startBar);
-          return;
-        }
         const patternTransfer = event.dataTransfer?.getData("application/x-pulsegrid-pattern-clip");
         if (!patternTransfer) return;
         try {
@@ -1544,11 +1541,13 @@
     $("#help-button").addEventListener("click", () => $("#help-dialog").showModal());
     $("#sequencer-tab").addEventListener("click", () => setWorkspaceView("sequencer"));
     $("#arrangement-tab").addEventListener("click", () => setWorkspaceView("arrangement"));
-    $("#pattern-source").addEventListener("click", () => addPatternClip());
-    $("#pattern-source").addEventListener("dragstart", (event) => {
-      event.dataTransfer?.setData("application/x-pulsegrid-pattern-source", "current-pattern");
-      if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+    $("#timeline-scroll").addEventListener("scroll", (event) => {
+      $("#arrangement-track-labels").scrollTop = event.currentTarget.scrollTop;
     });
+    $("#arrangement-pattern-length").addEventListener("change", (event) => setLength(Number(event.target.value)));
+    $("#add-pattern-button").addEventListener("click", () => addPatternClip());
+    $("#source-browser-button").addEventListener("click", () => $("#source-browser-dialog").showModal());
+    $("#source-browser-close").addEventListener("click", () => $("#source-browser-dialog").close());
     $("#import-recording-button").addEventListener("click", () => requestRecordingImport());
     $("#empty-import-button").addEventListener("click", () => requestRecordingImport());
     $("#side-add-recording").addEventListener("click", () => requestRecordingImport());
