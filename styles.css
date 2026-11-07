@@ -103,7 +103,7 @@ input[type="range"]::-moz-range-thumb { width: 7px; height: 7px; border: 2px sol
 h1 { margin: 9px 0 4px; font-size: 28px; font-weight: 600; letter-spacing: -1.05px; }
 .heading-period { color: var(--accent); }
 .section-subtitle { margin: 0; color: var(--muted); font-size: 12px; }
-.sequencer-actions { display: flex; gap: 9px; padding-bottom: 2px; }
+.sequencer-actions { display: flex; max-width: 65%; flex-wrap: wrap; justify-content: flex-end; gap: 9px; padding-bottom: 2px; }
 .quiet-button { display: flex; align-items: center; gap: 7px; height: 32px; border: 1px solid var(--stroke); border-radius: 6px; background: #1a1b1e; padding: 0 10px; color: #b4b5ba; font-size: 11px; cursor: pointer; }
 .quiet-button:hover { background: var(--panel-hover); color: var(--text); }
 .quiet-button svg { width: 14px; height: 14px; }
@@ -315,7 +315,7 @@ kbd { border: 1px solid #393a3f; border-radius: 3px; padding: 2px 4px; color: #b
   .transport-right { display: none; }
   .section-heading { align-items: flex-start; gap: 12px; flex-direction: column; padding: 26px 0 16px; }
   h1 { font-size: 25px; }
-  .sequencer-actions { align-self: flex-end; margin-top: -1px; }
+  .sequencer-actions { width: 100%; max-width: 100%; align-self: flex-end; margin-top: -1px; }
   .grid-header, .track-row { grid-template-columns: 112px minmax(0, 1fr); }
   .track-header-label { padding: 0 9px; font-size: 8px; }
   .steps-header, .steps-grid { gap: 2px; padding: 0 5px; }

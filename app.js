@@ -198,24 +198,29 @@
   }
 
   function renderPatternInstrumentOptions() {
-    const select = $("#pattern-instrument-select");
-    const addButton = $("#add-pattern-instrument-button");
     const included = new Set(getPatternTrackIds(getPattern()));
     const available = state.tracks.filter((track) => !included.has(track.id));
-    select.replaceChildren();
-    const placeholder = document.createElement("option");
-    placeholder.value = "";
-    placeholder.textContent = available.length ? "Add instrument…" : "All instruments added";
-    placeholder.disabled = true;
-    placeholder.selected = true;
-    select.append(placeholder);
-    available.forEach((track) => {
-      const option = document.createElement("option");
-      option.value = track.id;
-      option.textContent = track.name;
-      select.append(option);
+    [
+      ["#sequencer-instrument-select", "#add-sequencer-instrument-button"],
+      ["#pattern-instrument-select", "#add-pattern-instrument-button"],
+    ].forEach(([selectSelector, buttonSelector]) => {
+      const select = $(selectSelector);
+      const addButton = $(buttonSelector);
+      select.replaceChildren();
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = available.length ? "Add instrument…" : "All instruments added";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      select.append(placeholder);
+      available.forEach((track) => {
+        const option = document.createElement("option");
+        option.value = track.id;
+        option.textContent = track.name;
+        select.append(option);
+      });
+      addButton.disabled = available.length === 0;
     });
-    addButton.disabled = available.length === 0;
   }
 
   function addPatternInstrument(trackId) {
@@ -2051,13 +2056,19 @@
       event.dataTransfer.setData("application/x-pulsegrid-pattern-source", JSON.stringify({ patternId: pattern.id }));
       event.dataTransfer.effectAllowed = "copy";
     });
+    $("#sequencer-browser-button").addEventListener("click", () => $("#source-browser-dialog").showModal());
     $("#arrangement-pattern-length").addEventListener("change", (event) => setLength(Number(event.target.value)));
     $("#new-pattern-button").addEventListener("click", createPattern);
     $("#new-pattern-sequencer-button").addEventListener("click", createPattern);
     $("#add-pattern-button").addEventListener("click", () => addPatternClip());
-    $("#add-pattern-instrument-button").addEventListener("click", () => {
-      const select = $("#pattern-instrument-select");
-      if (select.value) addPatternInstrument(select.value);
+    [
+      ["#sequencer-instrument-select", "#add-sequencer-instrument-button"],
+      ["#pattern-instrument-select", "#add-pattern-instrument-button"],
+    ].forEach(([selectSelector, buttonSelector]) => {
+      $(buttonSelector).addEventListener("click", () => {
+        const select = $(selectSelector);
+        if (select.value) addPatternInstrument(select.value);
+      });
     });
     $("#source-browser-button").addEventListener("click", () => $("#source-browser-dialog").showModal());
     $("#source-browser-close").addEventListener("click", () => $("#source-browser-dialog").close());
