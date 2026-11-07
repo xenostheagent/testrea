@@ -128,6 +128,10 @@
     return state.patterns.find((pattern) => pattern.id === patternId) || null;
   }
 
+  function getPatternTrackIds(pattern) {
+    return Array.isArray(pattern?.trackIds) ? pattern.trackIds : state.tracks.map((track) => track.id);
+  }
+
   function makePatternSnapshot(id, name) {
     const cells = {};
     const variants = {};
@@ -135,16 +139,18 @@
       cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) variants[track.id] = track.variant || "classic";
     });
-    return { id, name, steps: state.steps, cells, variants };
+    return { id, name, steps: state.steps, trackIds: state.tracks.map((track) => track.id), cells, variants };
   }
 
   function captureCurrentPattern() {
     const pattern = getPattern();
     if (!pattern) return;
     pattern.steps = state.steps;
+    const trackIds = getPatternTrackIds(pattern).filter((id) => state.tracks.some((track) => track.id === id));
+    pattern.trackIds = trackIds;
     pattern.cells = {};
     pattern.variants = {};
-    state.tracks.forEach((track) => {
+    state.tracks.filter((track) => trackIds.includes(track.id)).forEach((track) => {
       pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
     });
@@ -153,10 +159,13 @@
   function applyPattern(pattern) {
     state.selectedPatternId = pattern.id;
     state.steps = pattern.steps === 32 ? 32 : 16;
+    const patternTrackIds = new Set(getPatternTrackIds(pattern));
     state.tracks.forEach((track) => {
-      track.cells = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
+      track.cells = patternTrackIds.has(track.id)
+        ? Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true)
+        : Array(STEP_COUNT).fill(false);
       const variant = pattern.variants?.[track.id];
-      if (SOUND_VARIANTS[track.kind]) {
+      if (patternTrackIds.has(track.id) && SOUND_VARIANTS[track.kind]) {
         track.variant = SOUND_VARIANTS[track.kind].some((sound) => sound.id === variant) ? variant : "classic";
       }
     });
@@ -181,6 +190,63 @@
       });
       select.value = state.selectedPatternId;
     });
+    const selected = getPattern();
+    const dragSource = $("#pattern-drag-source");
+    dragSource.textContent = selected ? `Drag ${selected.name} to timeline` : "No pattern selected";
+    dragSource.disabled = !selected;
+    renderPatternInstrumentOptions();
+  }
+
+  function renderPatternInstrumentOptions() {
+    const select = $("#pattern-instrument-select");
+    const addButton = $("#add-pattern-instrument-button");
+    const included = new Set(getPatternTrackIds(getPattern()));
+    const available = state.tracks.filter((track) => !included.has(track.id));
+    select.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = available.length ? "Add instrument…" : "All instruments added";
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    select.append(placeholder);
+    available.forEach((track) => {
+      const option = document.createElement("option");
+      option.value = track.id;
+      option.textContent = track.name;
+      select.append(option);
+    });
+    addButton.disabled = available.length === 0;
+  }
+
+  function addPatternInstrument(trackId) {
+    const pattern = getPattern();
+    const track = state.tracks.find((item) => item.id === trackId);
+    if (!pattern || !track) return;
+    const trackIds = getPatternTrackIds(pattern);
+    if (trackIds.includes(trackId)) return;
+    captureCurrentPattern();
+    pattern.trackIds.push(trackId);
+    pattern.cells[trackId] = Array(STEP_COUNT).fill(false);
+    if (SOUND_VARIANTS[track.kind]) pattern.variants[trackId] = track.variant || "classic";
+    track.cells = Array(STEP_COUNT).fill(false);
+    renderTracks();
+    renderPatternSelectors();
+    saveState();
+    showToast(`${track.name} added to ${pattern.name}`);
+  }
+
+  function removePatternInstrument(track) {
+    const pattern = getPattern();
+    if (!pattern) return;
+    captureCurrentPattern();
+    pattern.trackIds = getPatternTrackIds(pattern).filter((id) => id !== track.id);
+    delete pattern.cells[track.id];
+    delete pattern.variants[track.id];
+    track.cells = Array(STEP_COUNT).fill(false);
+    renderTracks();
+    renderPatternSelectors();
+    saveState();
+    showToast(`${track.name} removed from ${pattern.name}`);
   }
 
   function selectPattern(patternId) {
@@ -207,6 +273,7 @@
       id: makeId(),
       name: `Pattern ${number}`,
       steps: source.steps,
+      trackIds: [...getPatternTrackIds(source)],
       cells: Object.fromEntries(Object.entries(source.cells).map(([trackId, cells]) => [trackId, [...cells]])),
       variants: { ...source.variants },
     };
@@ -238,7 +305,9 @@
 
   function renderTracks() {
     trackList.innerHTML = "";
-    state.tracks.forEach((track) => {
+    const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
+    const visibleTracks = state.tracks.filter((track) => includedTrackIds.has(track.id));
+    visibleTracks.forEach((track) => {
       const row = document.createElement("div");
       row.className = "track-row";
       row.dataset.trackId = track.id;
@@ -268,6 +337,7 @@
         makeTrackButton("mute", "Mute track", track),
         makeTrackButton("solo", "Solo track", track),
         makeTrackButton("sample", track.sample ? "Replace loaded sample" : "Load an audio sample", track),
+        makeTrackButton("remove-from-pattern", "Remove instrument from this pattern", track),
       );
       if (track.kind === "sample") controls.append(makeTrackButton("remove", "Remove imported drum sound", track));
       const volume = document.createElement("input");
@@ -309,8 +379,9 @@
       row.append(meta, grid);
       trackList.append(row);
     });
-    $("#track-count").textContent = String(state.tracks.length).padStart(2, "0");
+    $("#track-count").textContent = String(visibleTracks.length).padStart(2, "0");
     renderInstrumentBrowser();
+    renderPatternInstrumentOptions();
   }
 
   function makeSoundSelect(track, compact = false) {
@@ -354,6 +425,11 @@
       button.addEventListener("click", () => removeImportedDrumTrack(track));
       return button;
     }
+    if (type === "remove-from-pattern") {
+      button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 10h12" /></svg>';
+      button.addEventListener("click", () => removePatternInstrument(track));
+      return button;
+    }
     if (type === "mute") {
       button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 8v4h3l4 3V5L7 8H4Z" /><path d="m14 8 4 4m0-4-4 4" /></svg>';
     } else {
@@ -388,9 +464,12 @@
     state.selectedPreset = preset.id;
     state.bpm = preset.bpm;
     tempoValue.textContent = String(state.bpm);
+    const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
     state.tracks.forEach((track) => {
       track.cells.fill(false);
-      (preset.hits[track.id] || []).forEach((step) => { track.cells[step] = true; });
+      if (includedTrackIds.has(track.id)) {
+        (preset.hits[track.id] || []).forEach((step) => { track.cells[step] = true; });
+      }
     });
     renderTracks();
     renderPresets();
@@ -456,10 +535,14 @@
   }
 
   function scheduleStep(step, time, pattern = null) {
-    state.tracks.forEach((track) => {
+    const activeTracks = pattern
+      ? state.tracks.filter((track) => getPatternTrackIds(pattern).includes(track.id))
+      : state.tracks;
+    const hasSolo = state.tracks.some((track) => track.solo);
+    activeTracks.forEach((track) => {
       const cells = pattern ? pattern.cells?.[track.id] || [] : track.cells;
       const variant = pattern ? pattern.variants?.[track.id] || "classic" : track.variant;
-      if (cells[step] && !track.muted && (!state.tracks.some((item) => item.solo) || track.solo)) {
+      if (cells[step] && !track.muted && (!hasSolo || track.solo)) {
         triggerTrack(track, time, step, variant);
       }
     });
@@ -557,6 +640,7 @@
     const failures = [];
     try {
       await ensureAudio();
+      captureCurrentPattern();
       for (const file of files) {
         if (!isAudioFile(file)) {
           failures.push(file.name);
@@ -570,9 +654,11 @@
             buffer,
           });
           state.tracks.push(track);
-          state.patterns.forEach((pattern) => {
+          const pattern = getPattern();
+          if (pattern) {
+            pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
             pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
-          });
+          }
           imported.push({ track, file });
         } catch {
           failures.push(file.name);
@@ -602,6 +688,7 @@
     track.gainNode?.disconnect();
     state.tracks = state.tracks.filter((item) => item !== track);
     state.patterns.forEach((pattern) => {
+      pattern.trackIds = getPatternTrackIds(pattern).filter((id) => id !== track.id);
       delete pattern.cells[track.id];
       delete pattern.variants[track.id];
     });
@@ -815,8 +902,8 @@
     });
   }
 
-  function addPatternClip(startBar = state.arrangementCursor) {
-    const pattern = getPattern();
+  function addPatternClip(startBar = state.arrangementCursor, patternId = state.selectedPatternId) {
+    const pattern = getPattern(patternId);
     if (!pattern) return;
     state.patternClips.push({
       id: makeId(),
@@ -864,7 +951,8 @@
       event.preventDefault();
       lane.classList.add("is-drop-target");
       if (event.dataTransfer) {
-        event.dataTransfer.dropEffect = event.dataTransfer.files.length ? "copy" : "move";
+        const isPatternSource = Array.from(event.dataTransfer.types || []).includes("application/x-pulsegrid-pattern-source");
+        event.dataTransfer.dropEffect = event.dataTransfer.files.length || isPatternSource ? "copy" : "move";
       }
     });
     lane.addEventListener("dragleave", (event) => {
@@ -880,6 +968,16 @@
         return;
       }
       if (trackId === "drums") {
+        const patternSource = event.dataTransfer?.getData("application/x-pulsegrid-pattern-source");
+        if (patternSource) {
+          try {
+            const { patternId } = JSON.parse(patternSource);
+            addPatternClip(startBar, patternId);
+          } catch {
+            showToast("That pattern could not be added.");
+          }
+          return;
+        }
         const patternTransfer = event.dataTransfer?.getData("application/x-pulsegrid-pattern-clip");
         if (!patternTransfer) return;
         try {
@@ -1257,12 +1355,11 @@
               buffer,
             });
             state.tracks.push(track);
-            state.patterns.forEach((pattern) => {
-              if (!pattern.cells[track.id]) {
-                pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) =>
-                  pattern.id === state.selectedPatternId && record.cells?.[index] === true);
-              }
-            });
+            const pattern = getPattern();
+            if (pattern) {
+              pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
+              pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => record.cells?.[index] === true);
+            }
           } else {
             track.sample = { name: record.fileName || record.trackName, buffer };
             ensureSequencerTrackAudio(track);
@@ -1568,6 +1665,7 @@
         id: pattern.id,
         name: pattern.name,
         steps: pattern.steps,
+        trackIds: [...getPatternTrackIds(pattern)],
         cells: Object.fromEntries(Object.entries(pattern.cells).map(([trackId, cells]) => [trackId, [...cells]])),
         variants: { ...pattern.variants },
       })),
@@ -1653,6 +1751,9 @@
               id: pattern.id,
               name: pattern.name,
               steps: pattern.steps === 32 ? 32 : 16,
+              trackIds: Array.isArray(pattern.trackIds)
+                ? [...new Set(pattern.trackIds.filter((trackId) => state.tracks.some((track) => track.id === trackId)))]
+                : state.tracks.map((track) => track.id),
               cells,
               variants,
             };
@@ -1773,11 +1874,13 @@
       state.patternClips.forEach((clip) => {
         const pattern = getPattern(clip.patternId);
         if (!pattern) return;
+        const patternTrackIds = new Set(getPatternTrackIds(pattern));
+        const patternTracks = allTracks.filter((track) => patternTrackIds.has(track.id));
         for (let step = 0; step < pattern.steps; step += 1) {
           const time = clip.startBar * secondsPerBar + step * stepDuration +
             (step % 2 === 1 ? stepDuration * (state.swing / 100) : 0);
           if (time >= duration) continue;
-          state.tracks.forEach((track) => {
+          patternTracks.forEach((track) => {
             if (pattern.cells[track.id]?.[step] && !track.muted && (!hasSolo || track.solo)) {
               triggerTrack(track, time, step, pattern.variants[track.id] || track.variant);
             }
@@ -1852,14 +1955,15 @@
     const hat = state.tracks.find((track) => track.id === "closed-hat");
     const openHat = state.tracks.find((track) => track.id === "open-hat");
     const rim = state.tracks.find((track) => track.id === "rim");
+    const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
     state.tracks.forEach((track) => track.cells.fill(false));
     for (let step = 0; step < state.steps; step += 1) {
-      if (step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) kick.cells[step] = true;
-      if (step % 8 === 4 && Math.random() > 0.16) snare.cells[step] = true;
-      if (step % 2 === 1 && Math.random() > 0.28) hat.cells[step] = true;
-      if (step % 8 === 6 && Math.random() > 0.42) openHat.cells[step] = true;
-      if (step % 4 === 3 && Math.random() > 0.48) rim.cells[step] = true;
-      if (step % 8 === 4 && Math.random() > 0.6) clap.cells[step] = true;
+      if (kick && includedTrackIds.has(kick.id) && step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) kick.cells[step] = true;
+      if (snare && includedTrackIds.has(snare.id) && step % 8 === 4 && Math.random() > 0.16) snare.cells[step] = true;
+      if (hat && includedTrackIds.has(hat.id) && step % 2 === 1 && Math.random() > 0.28) hat.cells[step] = true;
+      if (openHat && includedTrackIds.has(openHat.id) && step % 8 === 6 && Math.random() > 0.42) openHat.cells[step] = true;
+      if (rim && includedTrackIds.has(rim.id) && step % 4 === 3 && Math.random() > 0.48) rim.cells[step] = true;
+      if (clap && includedTrackIds.has(clap.id) && step % 8 === 4 && Math.random() > 0.6) clap.cells[step] = true;
     }
     state.selectedPreset = null;
     renderTracks();
@@ -1927,10 +2031,20 @@
     });
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#arrangement-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
+    $("#pattern-drag-source").addEventListener("dragstart", (event) => {
+      const pattern = getPattern();
+      if (!pattern || !event.dataTransfer) return;
+      event.dataTransfer.setData("application/x-pulsegrid-pattern-source", JSON.stringify({ patternId: pattern.id }));
+      event.dataTransfer.effectAllowed = "copy";
+    });
     $("#arrangement-pattern-length").addEventListener("change", (event) => setLength(Number(event.target.value)));
     $("#new-pattern-button").addEventListener("click", createPattern);
     $("#new-pattern-sequencer-button").addEventListener("click", createPattern);
     $("#add-pattern-button").addEventListener("click", () => addPatternClip());
+    $("#add-pattern-instrument-button").addEventListener("click", () => {
+      const select = $("#pattern-instrument-select");
+      if (select.value) addPatternInstrument(select.value);
+    });
     $("#source-browser-button").addEventListener("click", () => $("#source-browser-dialog").showModal());
     $("#source-browser-close").addEventListener("click", () => $("#source-browser-dialog").close());
     $("#import-recording-button").addEventListener("click", () => requestRecordingImport());
