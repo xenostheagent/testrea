@@ -1,1108 +1,1229 @@
-const POSTS_KEY = "obvault.posts.v1";
-const CALLS_KEY = "obvault.calls.v1";
-const ACCOUNTS_KEY = "obvault.accounts.v1";
-const SESSION_KEY = "obvault.demo-session.v1";
-const THEME_KEY = "obvault.theme.v1";
-const MEDIA_DB = "obvault-media";
-const MEDIA_STORE = "attachments";
-const DEMO_ACCOUNTS = [
-  { name: "Nia Park", email: "nia.park@oberlin.edu", handle: "@niapark", password: "OberlinDemo1!", initials: "N", avatar: "avatar-nia" },
-  { name: "Omar Reyes", email: "omar.reyes@oberlin.edu", handle: "@omaroutside", password: "OberlinDemo2!", initials: "O", avatar: "avatar-omar" },
-  { name: "June Kim", email: "june.kim@oberlin.edu", handle: "@junekim", password: "OberlinDemo3!", initials: "J", avatar: "avatar-june" },
-  { name: "Ari Flores", email: "ari.flores@oberlin.edu", handle: "@ariflores", password: "OberlinDemo4!", initials: "A", avatar: "avatar-ari" }
-];
-const people = [
-  { ...DEMO_ACCOUNTS[0], bio: "Slow mornings & ceramics", following: true },
-  { ...DEMO_ACCOUNTS[1], bio: "Taking the long way home", following: true },
-  { ...DEMO_ACCOUNTS[2], bio: "A small studio in the city", following: false },
-  { ...DEMO_ACCOUNTS[3], bio: "Making things, growing things", following: false }
-];
-const now = Date.now();
-const starterPosts = [
-  { id: "seed-1", author: "Nia Park", authorEmail: "nia.park@oberlin.edu", handle: "@niapark", initials: "N", avatar: "avatar-nia", createdAt: now - 36e5 * 2, kind: "photo", scene: "garden", caption: "The first tomatoes finally showed up. I think we both needed a little sun today. #slowmorning #growingthings", likes: 128, likedBy: [], comments: [{ author: "Omar Reyes", text: "Look at those little guys!", id: "c1" }] },
-  { id: "seed-2", author: "Omar Reyes", authorEmail: "omar.reyes@oberlin.edu", handle: "@omaroutside", initials: "O", avatar: "avatar-omar", createdAt: now - 36e5 * 5, kind: "video", scene: "coast", caption: "Took the path that doesn't have a name. Turns out it had a pretty good ending. #outsidehours", likes: 86, likedBy: [], comments: [] },
-  { id: "seed-3", author: "June Kim", authorEmail: "june.kim@oberlin.edu", handle: "@junekim", initials: "J", avatar: "avatar-june", createdAt: now - 36e5 * 19, kind: "photo", scene: "studio", caption: "A few seconds before the kiln opens. Holding my breath, as usual. #makerdays #madebyhand", likes: 204, likedBy: [], comments: [{ author: "Nia Park", text: "Fingers crossed! 🌱", id: "c2" }, { author: "Ari Flores", text: "The colors are lovely.", id: "c3" }] },
-  { id: "seed-4", author: "Ari Flores", authorEmail: "ari.flores@oberlin.edu", handle: "@ariflores", initials: "A", avatar: "avatar-ari", createdAt: now - 36e5 * 25, kind: "text", scene: "note", caption: "Reminder from my walk: you don't have to turn every quiet thing into something productive. #littlejoys", likes: 64, likedBy: [], comments: [] }
-];
-const stories = [
-  { ...people[0], scene: "garden", note: "tiny things growing" },
-  { ...people[1], scene: "coast", note: "a little fresh air" },
-  { ...people[2], scene: "studio", note: "today in the studio" },
-  { ...people[3], scene: "field", note: "found a new path" }
-];
+(() => {
+  "use strict";
 
-const postList = document.querySelector("#post-list");
-const callsList = document.querySelector("#calls-list");
-const emptyState = document.querySelector("#empty-state");
-const composer = document.querySelector("#composer");
-const composerForm = document.querySelector("#composer-form");
-const captionInput = document.querySelector("#post-caption");
-const fileInput = document.querySelector("#post-file");
-const uploadPreview = document.querySelector("#upload-preview");
-const characterCount = document.querySelector("#character-count");
-const publishButton = document.querySelector("#publish-button");
-const storyDialog = document.querySelector("#story-dialog");
-const storyViewer = document.querySelector("#story-viewer");
-const searchInput = document.querySelector("#search");
-const mediaUrls = new Map();
-const authScreen = document.querySelector("#auth-screen");
-const loginForm = document.querySelector("#login-form");
-const registerForm = document.querySelector("#register-form");
-let activeView = "home";
-let activeFilter = "all";
-let query = "";
-let selectedFile = null;
-let previewUrl = null;
-let toastTimer = null;
-let posts = loadJson(POSTS_KEY, starterPosts);
-let calls = loadJson(CALLS_KEY, []);
-let following = [];
-let interactions = { likedIds: [], savedIds: [] };
-let currentUser = null;
-let currentTheme = "light";
-try {
-  currentTheme = localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
-} catch {
-  currentTheme = "light";
-}
+  const TRACKS = [
+    { id: "kick", name: "Kick", kind: "kick", color: "#d4f16c", subtitle: "Low-end foundation", volume: 0.8, hits: [0, 4, 8, 12] },
+    { id: "snare", name: "Snare", kind: "snare", color: "#ff9178", subtitle: "Backbeat", volume: 0.57, hits: [4, 12] },
+    { id: "clap", name: "Clap", kind: "clap", color: "#ee9df6", subtitle: "Layer & texture", volume: 0.42, hits: [4, 12] },
+    { id: "closed-hat", name: "Closed hat", kind: "hat", color: "#7cc9ff", subtitle: "16th-note shimmer", volume: 0.42, hits: [2, 6, 10, 14] },
+    { id: "open-hat", name: "Open hat", kind: "openhat", color: "#f6ca74", subtitle: "Air & movement", volume: 0.33, hits: [6, 14] },
+    { id: "rim", name: "Rim / perc", kind: "rim", color: "#93e2bd", subtitle: "Add a little syncopation", volume: 0.48, hits: [3, 11] },
+  ];
 
-function setTheme(theme) {
-  currentTheme = theme === "light" ? "light" : "dark";
-  document.documentElement.dataset.theme = currentTheme;
-  document.querySelectorAll("[data-theme-toggle]").forEach((button) => {
-    const nextTheme = currentTheme === "dark" ? "light" : "dark";
-    button.setAttribute("aria-label", `Switch to ${nextTheme} mode`);
-    button.querySelector(".theme-label").textContent = nextTheme === "light" ? "LIGHT" : "DARK";
-    button.querySelector(".theme-glyph").textContent = nextTheme === "light" ? "☼" : "☾";
-  });
-  document.querySelector('meta[name="theme-color"]').content = currentTheme === "dark" ? "#11100f" : "#f1eee8";
-  try {
-    localStorage.setItem(THEME_KEY, currentTheme);
-  } catch {
-    showToast("Theme changed for this visit, but couldn't be saved.");
-  }
-}
+  const PRESETS = [
+    {
+      id: "warehouse", title: "Warehouse", tag: "04 / FLOOR", description: "Driving, no-nonsense techno", color: "#d4f16c", bpm: 128,
+      hits: { kick: [0, 4, 8, 12], snare: [4, 12], clap: [4, 12], "closed-hat": [2, 6, 10, 14], "open-hat": [6, 14], rim: [3, 11] },
+    },
+    {
+      id: "hypnotic", title: "Hypnotic", tag: "LATE NIGHT", description: "A steady pulse with space", color: "#93e2bd", bpm: 122,
+      hits: { kick: [0, 6, 8, 14], snare: [4, 12], clap: [12], "closed-hat": [2, 6, 10, 14], "open-hat": [7, 15], rim: [3, 11] },
+    },
+    {
+      id: "broken", title: "Broken beat", tag: "OFF-GRID", description: "Let the kick skip a step", color: "#ff9178", bpm: 116,
+      hits: { kick: [0, 3, 7, 10, 14], snare: [4, 12], clap: [12], "closed-hat": [2, 5, 6, 10, 13, 14], "open-hat": [7, 15], rim: [3, 11] },
+    },
+    {
+      id: "minimal", title: "Minimal", tag: "LESS IS MORE", description: "Room to build something", color: "#7cc9ff", bpm: 124,
+      hits: { kick: [0, 4, 8, 12], snare: [12], clap: [], "closed-hat": [2, 6, 10, 14], "open-hat": [14], rim: [7] },
+    },
+  ];
+  const STORAGE_KEY = "pulsegrid-session-v1";
+  const STEP_COUNT = 32;
+  const BAR_WIDTH = 116;
+  const MAX_ARRANGEMENT_BARS = 64;
+  const TRACK_COLORS = ["#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd"];
+  const state = {
+    tracks: [],
+    arrangementTracks: [],
+    steps: 16,
+    view: "sequencer",
+    bpm: 124,
+    swing: 0,
+    arrangementBars: 8,
+    arrangementCursor: 0,
+    arrangementSources: new Set(),
+    playbackStartTime: 0,
+    playbackStartBar: 0,
+    playbackEndTime: 0,
+    selectedPreset: "warehouse",
+    isPlaying: false,
+    metronome: false,
+    currentStep: -1,
+    audioContext: null,
+    masterGain: null,
+    schedulerId: null,
+    nextStepTime: 0,
+    stepIndex: 0,
+    stepTimers: new Set(),
+    noiseBuffer: null,
+    toastTimer: null,
+    sampleTrackId: null,
+    pendingImportTrackId: null,
+  };
 
-function isOberlinEmail(email) {
-  return /^[^\s@]+@oberlin\.edu$/i.test(email.trim());
-}
+  const $ = (selector) => document.querySelector(selector);
+  const trackList = $("#track-list");
+  const stepsHeader = $("#steps-header");
+  const patternCards = $("#pattern-cards");
+  const playButton = $("#play-button");
+  const tempoValue = $("#tempo-value");
+  const swingSlider = $("#swing-slider");
+  const sampleInput = $("#sample-input");
+  const toast = $("#toast");
 
-function normalizeEmail(email) {
-  return email.trim().toLowerCase();
-}
-
-function profileKey(email) {
-  return `obvault.profile.${encodeURIComponent(email)}`;
-}
-
-async function passwordDigest(password, salt) {
-  if (!crypto?.subtle) throw new Error("Secure password hashing isn't available in this browser.");
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 210000 }, key, 256);
-  return [...new Uint8Array(bits)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function bytesToHex(bytes) {
-  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function constantTimeEqual(left, right) {
-  if (left.length !== right.length) return false;
-  let mismatch = 0;
-  for (let index = 0; index < left.length; index += 1) mismatch |= left.charCodeAt(index) ^ right.charCodeAt(index);
-  return mismatch === 0;
-}
-
-function publicAccount(account) {
-  const { passwordHash, passwordSalt, ...publicFields } = account;
-  return publicFields;
-}
-
-class DemoAuthProvider {
-  async listAccounts() {
-    return loadJson(ACCOUNTS_KEY, []);
+  function makeTracks() {
+    const tracks = TRACKS.map((definition) => {
+      const cells = Array(STEP_COUNT).fill(false);
+      definition.hits.forEach((step) => { cells[step] = true; });
+      return { ...definition, cells, muted: false, solo: false, sample: null, gainNode: null };
+    });
+    tracks.forEach(ensureSequencerTrackAudio);
+    return tracks;
   }
 
-  async saveAccounts(accounts) {
-    if (!persist(ACCOUNTS_KEY, accounts)) throw new Error("Couldn't save this account in local browser storage.");
+  function renderHeader() {
+    stepsHeader.innerHTML = "";
+    const gridHeader = stepsHeader.parentElement;
+    gridHeader.classList.toggle("is-two-bars", state.steps === 32);
+    stepsHeader.style.gridTemplateRows = state.steps === 32 ? "repeat(2, 17px)" : "";
+    for (let step = 0; step < state.steps; step += 1) {
+      const barStep = step % 16;
+      const number = document.createElement("span");
+      number.className = `step-number${barStep % 4 === 0 ? " is-beat" : ""}${barStep === 0 ? " is-bar" : ""}`;
+      number.textContent = String(barStep + 1).padStart(2, "0");
+      stepsHeader.append(number);
+    }
   }
 
-  async seed() {
-    const accounts = await this.listAccounts();
-    let changed = false;
-    for (const demo of DEMO_ACCOUNTS) {
-      if (accounts.some((account) => account.email === demo.email)) continue;
-      const passwordSalt = crypto.getRandomValues(new Uint8Array(16));
-      accounts.push({
-        name: demo.name, email: demo.email, handle: demo.handle, initials: demo.initials, avatar: demo.avatar,
-        passwordSalt: bytesToHex(passwordSalt),
-        passwordHash: await passwordDigest(demo.password, passwordSalt)
+  function renderTracks() {
+    trackList.innerHTML = "";
+    state.tracks.forEach((track) => {
+      const row = document.createElement("div");
+      row.className = "track-row";
+      row.dataset.trackId = track.id;
+      row.style.setProperty("--track-color", track.color);
+
+      const meta = document.createElement("div");
+      meta.className = "track-meta";
+      const color = document.createElement("span");
+      color.className = "track-color";
+      color.setAttribute("aria-hidden", "true");
+      const info = document.createElement("div");
+      info.className = "track-info";
+      const name = document.createElement("div");
+      name.className = "track-name";
+      name.textContent = track.name;
+      const subtitle = document.createElement("div");
+      subtitle.className = `track-subtitle${track.sample ? " has-sample" : ""}`;
+      subtitle.title = track.sample?.name || track.subtitle;
+      subtitle.textContent = track.sample?.name || track.subtitle;
+      info.append(name, subtitle);
+
+      const controls = document.createElement("div");
+      controls.className = "track-controls";
+      controls.append(
+        makeTrackButton("mute", "Mute track", track),
+        makeTrackButton("solo", "Solo track", track),
+        makeTrackButton("sample", track.sample ? "Replace loaded sample" : "Load an audio sample", track),
+      );
+      const volume = document.createElement("input");
+      volume.className = "track-volume";
+      volume.type = "range";
+      volume.min = "0";
+      volume.max = "100";
+      volume.value = String(Math.round(track.volume * 100));
+      volume.setAttribute("aria-label", `${track.name} volume`);
+      volume.addEventListener("input", () => {
+        track.volume = Number(volume.value) / 100;
+        updateTrackGains();
+        saveState();
       });
-      changed = true;
-    }
-    if (changed) await this.saveAccounts(accounts);
-  }
-
-  async register({ name, email, password }) {
-    const normalizedEmail = normalizeEmail(email);
-    if (!isOberlinEmail(normalizedEmail)) throw new Error("Use a valid @oberlin.edu email address.");
-    if (password.length < 8) throw new Error("Choose a password with at least 8 characters.");
-    const accounts = await this.listAccounts();
-    if (accounts.some((account) => account.email === normalizedEmail)) throw new Error("An account already exists for that email.");
-    const salt = crypto.getRandomValues(new Uint8Array(16));
-    const account = {
-      name: name.trim(), email: normalizedEmail,
-      handle: `@${normalizedEmail.split("@")[0].replace(/[^a-z0-9_]/g, "")}`,
-      initials: name.trim().charAt(0).toUpperCase(), avatar: "avatar-you",
-      passwordSalt: bytesToHex(salt), passwordHash: await passwordDigest(password, salt)
-    };
-    if (!account.name) throw new Error("Enter a display name.");
-    accounts.push(account);
-    await this.saveAccounts(accounts);
-    localStorage.setItem(SESSION_KEY, account.email);
-    return { user: publicAccount(account), verificationRequired: false };
-  }
-
-  async login(email, password) {
-    const normalizedEmail = normalizeEmail(email);
-    if (!isOberlinEmail(normalizedEmail)) throw new Error("Only @oberlin.edu accounts can log in.");
-    const account = (await this.listAccounts()).find((item) => item.email === normalizedEmail);
-    if (!account) throw new Error("Email or password is incorrect.");
-    const digest = await passwordDigest(password, Uint8Array.from(account.passwordSalt.match(/.{2}/g), (byte) => Number.parseInt(byte, 16)));
-    if (!constantTimeEqual(digest, account.passwordHash)) throw new Error("Email or password is incorrect.");
-    localStorage.setItem(SESSION_KEY, account.email);
-    return publicAccount(account);
-  }
-
-  async current() {
-    const email = normalizeEmail(localStorage.getItem(SESSION_KEY) || "");
-    if (!email) return null;
-    const account = (await this.listAccounts()).find((item) => item.email === email);
-    return account ? publicAccount(account) : null;
-  }
-
-  async logout() {
-    localStorage.removeItem(SESSION_KEY);
-  }
-}
-
-class HttpAuthProvider {
-  constructor(baseUrl) {
-    this.baseUrl = baseUrl.replace(/\/+$/, "");
-    this.csrfToken = null;
-  }
-
-  async ensureCsrfToken() {
-    if (this.csrfToken) return this.csrfToken;
-    const response = await fetch(`${this.baseUrl}/auth/csrf`, { credentials: "include" });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok || typeof result.token !== "string" || !result.token) {
-      throw new Error("Couldn't initialize secure account access.");
-    }
-    this.csrfToken = result.token;
-    return this.csrfToken;
-  }
-
-  async request(path, body) {
-    const headers = {};
-    if (body) {
-      headers["Content-Type"] = "application/json";
-      headers["X-CSRF-Token"] = await this.ensureCsrfToken();
-    }
-    const response = await fetch(`${this.baseUrl}/auth/${path}`, {
-      method: body ? "POST" : "GET",
-      credentials: "include",
-      headers,
-      body: body ? JSON.stringify(body) : undefined
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      const error = new Error(result.message || "Account request failed.");
-      error.status = response.status;
-      throw error;
-    }
-    return result;
-  }
-
-  async register(details) {
-    if (!isOberlinEmail(details.email)) throw new Error("Use a valid @oberlin.edu email address.");
-    return this.request("register", details);
-  }
-
-  async login(email, password) {
-    if (!isOberlinEmail(email)) throw new Error("Only @oberlin.edu accounts can log in.");
-    const result = await this.request("login", { email: normalizeEmail(email), password });
-    if (!result.user || result.user.emailVerified !== true) throw new Error("Verify your Oberlin email before logging in.");
-    return result.user;
-  }
-
-  async current() {
-    try {
-      const user = (await this.request("session")).user;
-      return user?.emailVerified === true ? user : null;
-    }
-    catch (error) {
-      if (error.status === 401) return null;
-      throw error;
-    }
-  }
-
-  async logout() {
-    await this.request("logout", {});
-  }
-}
-
-const authApiUrl = document.querySelector('meta[name="obvault-auth-api"]')?.content.trim();
-const authProvider = authApiUrl ? new HttpAuthProvider(authApiUrl) : new DemoAuthProvider();
-
-function loadJson(key, fallback) {
-  try {
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : structuredClone(fallback);
-  } catch {
-    showToast("Saved data couldn't be loaded. This session will still work.");
-    return structuredClone(fallback);
-  }
-}
-
-function persist(key, value) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    showToast("Couldn't save changes in this browser. Check available storage.");
-    return false;
-  }
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  })[character]);
-}
-
-function showToast(message) {
-  const region = document.querySelector("#toast-region");
-  if (!region) return;
-  region.textContent = message;
-  region.classList.add("visible");
-  window.clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => region.classList.remove("visible"), 2600);
-}
-
-function openMediaDatabase() {
-  return new Promise((resolve, reject) => {
-    if (!("indexedDB" in window)) {
-      reject(new Error("This browser doesn't support local media storage."));
-      return;
-    }
-    const request = indexedDB.open(MEDIA_DB, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore(MEDIA_STORE);
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error("Could not open media storage."));
-  });
-}
-
-async function writeAttachment(id, file) {
-  const database = await openMediaDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(MEDIA_STORE, "readwrite");
-    transaction.objectStore(MEDIA_STORE).put(file, id);
-    transaction.oncomplete = () => { database.close(); resolve(); };
-    transaction.onerror = () => { database.close(); reject(transaction.error ?? new Error("Could not save this file.")); };
-    transaction.onabort = () => { database.close(); reject(transaction.error ?? new Error("Saving this file was interrupted.")); };
-  });
-}
-
-async function readAttachment(id) {
-  const database = await openMediaDatabase();
-  return new Promise((resolve, reject) => {
-    const request = database.transaction(MEDIA_STORE, "readonly").objectStore(MEDIA_STORE).get(id);
-    request.onsuccess = () => {
-      database.close();
-      resolve(request.result ?? null);
-    };
-    request.onerror = () => {
-      database.close();
-      reject(request.error ?? new Error("Could not load a saved file."));
-    };
-  });
-}
-
-async function removeAttachment(id) {
-  if (!("indexedDB" in window)) return;
-  const database = await openMediaDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(MEDIA_STORE, "readwrite");
-    transaction.objectStore(MEDIA_STORE).delete(id);
-    transaction.oncomplete = () => { database.close(); resolve(); };
-    transaction.onerror = () => { database.close(); reject(transaction.error ?? new Error("Could not remove the saved file.")); };
-  });
-}
-
-function savePosts() {
-  return persist(POSTS_KEY, posts);
-}
-
-function saveProfile() {
-  if (!currentUser) return;
-  persist(profileKey(currentUser.email), { following, ...interactions });
-}
-
-function formatFileSize(bytes) {
-  if (!Number.isFinite(bytes) || bytes < 0) return "File";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function mediaKind(fileName, type) {
-  const name = fileName.toLowerCase();
-  if (type.startsWith("video/") || /\.(mp4|mov|webm|m4v|ogv|avi|mkv)$/i.test(name)) return "video";
-  if (type.startsWith("image/") || /\.(png|jpe?g|gif|webp|avif|bmp|tiff?)$/i.test(name)) return "image";
-  if (type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
-  return "file";
-}
-
-function showAuthError(form, message) {
-  const error = document.querySelector(`#${form.id === "login-form" ? "login-error" : "register-error"}`);
-  error.textContent = message;
-  error.hidden = false;
-}
-
-function hideAuthError(form) {
-  const error = document.querySelector(`#${form.id === "login-form" ? "login-error" : "register-error"}`);
-  error.hidden = true;
-  error.textContent = "";
-}
-
-function setAuthMode(mode) {
-  const isLogin = mode === "login";
-  loginForm.hidden = !isLogin;
-  registerForm.hidden = isLogin;
-  document.querySelectorAll("[data-auth-mode]").forEach((tab) => {
-    const selected = tab.dataset.authMode === mode;
-    tab.classList.toggle("active", selected);
-    tab.setAttribute("aria-selected", String(selected));
-  });
-  document.querySelector(isLogin ? "#login-email" : "#register-name").focus();
-}
-
-async function enterApp(user) {
-  if (!user || !isOberlinEmail(user.email)) {
-    throw new Error("Only an @oberlin.edu account can access ObVault.");
-  }
-  if (authProvider instanceof HttpAuthProvider && user.emailVerified !== true) {
-    throw new Error("Verify your Oberlin email before accessing ObVault.");
-  }
-  currentUser = { ...user, email: normalizeEmail(user.email) };
-  const profile = loadJson(profileKey(currentUser.email), {});
-  following = Array.isArray(profile.following) ? profile.following : [];
-  interactions = {
-    likedIds: Array.isArray(profile.likedIds) ? profile.likedIds : [],
-    savedIds: Array.isArray(profile.savedIds) ? profile.savedIds : []
-  };
-  authScreen.hidden = true;
-  document.body.classList.add("is-authenticated");
-  document.querySelectorAll(".avatar-you").forEach((avatar) => { avatar.textContent = currentUser.initials || currentUser.name[0]; });
-  document.querySelector(".composer-author strong").textContent = currentUser.name;
-  document.querySelector(".composer-author small").textContent = currentUser.email;
-  document.querySelector(".header-avatar").setAttribute("aria-label", `Open ${currentUser.name}'s profile`);
-  document.querySelector("#welcome-date").textContent = `SIGNED IN AS ${currentUser.email.toUpperCase()}`;
-  renderStories();
-  render();
-  await loadSavedMedia();
-}
-
-function leaveApp() {
-  currentUser = null;
-  document.body.classList.remove("is-authenticated");
-  authScreen.hidden = false;
-  closeDialogs();
-  setAuthMode("login");
-  loginForm.reset();
-  registerForm.reset();
-  setTimeout(() => document.querySelector("#login-email").focus(), 0);
-}
-
-function renderDemoAccountButtons() {
-  const container = document.querySelector("#demo-account-list");
-  if (!container) return;
-  container.innerHTML = DEMO_ACCOUNTS.map((account) => `
-    <button class="demo-account" type="button" data-demo-login="${escapeHtml(account.email)}">
-      <span class="avatar ${escapeHtml(account.avatar)}">${escapeHtml(account.initials)}</span>
-      <span><strong>${escapeHtml(account.name)}</strong><small>${escapeHtml(account.email)}</small></span>
-      <span class="demo-enter">↗</span>
-    </button>`).join("");
-}
-
-function timeAgo(timestamp) {
-  const minutes = Math.max(1, Math.floor((Date.now() - timestamp) / 60000));
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.floor(hours / 24)}d`;
-}
-
-function formatCaption(text) {
-  return escapeHtml(text).replace(/(#[a-zA-Z0-9_]+)/g, '<button class="inline-tag" type="button" data-search="$1">$1</button>');
-}
-
-function getMedia(post) {
-  if (mediaUrls.has(post.id)) {
-    const media = mediaUrls.get(post.id);
-    if (media.kind === "video") {
-      return `<video class="uploaded-media" src="${media.url}" controls preload="metadata" aria-label="Video posted by ${escapeHtml(post.author)}"></video>`;
-    }
-    if (media.kind === "image") {
-      return `<img class="uploaded-media" src="${media.url}" alt="${escapeHtml(media.name)}">`;
-    }
-    if (media.kind === "pdf") {
-      return `<div class="pdf-frame"><iframe sandbox title="PDF preview: ${escapeHtml(media.name)}" src="${media.url}"></iframe><a href="${media.url}" download="${escapeHtml(media.name)}">Download PDF</a></div>`;
-    }
-    return `<div class="attachment-tile"><span class="attachment-icon">↧</span><div><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.type || "File")} · ${formatFileSize(media.size)}</small></div><a href="${media.url}" download="${escapeHtml(media.name)}">Download</a></div>`;
-  }
-  if (post.attachmentId) {
-    return `<div class="media-unavailable">This upload isn't available in this browser.</div>`;
-  }
-  if (post.kind === "text") {
-    return `<div class="text-art"><span>“</span><p>${escapeHtml(post.caption.slice(0, 100))}${post.caption.length > 100 ? "…" : ""}</p><small>A thought from ${escapeHtml(post.author.split(" ")[0])}</small></div>`;
-  }
-  return `<div class="visual-card scene-${escapeHtml(post.scene || "garden")}" role="img" aria-label="${post.kind === "video" ? "Decorative video preview" : "Decorative photo illustration"}">
-    <span class="scene-sun"></span><span class="scene-shape shape-one"></span><span class="scene-shape shape-two"></span><span class="scene-shape shape-three"></span>
-    ${post.kind === "video" ? `<button class="media-play" type="button" data-action="play" data-id="${escapeHtml(post.id)}" aria-label="Play preview"><span>▶</span></button><span class="media-duration">0:18</span>` : ""}
-    <span class="scene-caption">${escapeHtml(post.scene === "garden" ? "A little room to grow" : post.scene === "coast" ? "The long way around" : post.scene === "studio" ? "In good hands" : "A pause for later")}</span>
-  </div>`;
-}
-
-function renderPost(post) {
-  const comments = Array.isArray(post.comments) ? post.comments : [];
-  const ownPost = post.authorEmail === currentUser.email;
-  const liked = interactions.likedIds.includes(post.id);
-  const saved = interactions.savedIds.includes(post.id);
-  const tags = [...new Set(post.caption.match(/#[a-zA-Z0-9_]+/g) || [])];
-  return `<article class="post-card" data-post-id="${escapeHtml(post.id)}">
-    <header class="post-author-row">
-      <span class="avatar ${escapeHtml(post.avatar || "avatar-you")}">${escapeHtml(post.initials || post.author[0])}</span>
-      <div class="author-details"><strong>${escapeHtml(post.author)}</strong><span>${escapeHtml(post.handle)} <i>·</i> ${timeAgo(post.createdAt)}</span></div>
-      <div class="post-options">
-        <button class="post-menu" type="button" data-action="more" data-id="${escapeHtml(post.id)}" aria-label="More post options" aria-expanded="false">···</button>
-        ${ownPost ? `<div class="post-options-menu" hidden><button type="button" data-action="delete" data-id="${escapeHtml(post.id)}">Delete post</button></div>` : ""}
-      </div>
-    </header>
-    ${post.kind === "text" ? "" : `<div class="post-media">${getMedia(post)}</div>`}
-    <div class="post-content">
-      <p class="post-caption">${formatCaption(post.caption)}</p>
-      ${tags.length ? `<div class="post-tags">${tags.map((tag) => `<button type="button" data-search="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`).join("")}</div>` : ""}
-      <div class="post-actions">
-        <button class="post-action like-action ${liked ? "is-liked" : ""}" type="button" data-action="like" data-id="${escapeHtml(post.id)}" aria-pressed="${liked}" aria-label="${liked ? "Unlike" : "Like"} post"><span aria-hidden="true">${liked ? "♥" : "♡"}</span><span>${(Number(post.likes) || 0) + (liked ? 1 : 0)}</span></button>
-        <button class="post-action" type="button" data-action="comments" data-id="${escapeHtml(post.id)}" aria-expanded="false"><span aria-hidden="true">◯</span><span>${comments.length}</span></button>
-        <button class="post-action share-action" type="button" data-action="share" data-id="${escapeHtml(post.id)}"><span aria-hidden="true">↗</span><span>Share</span></button>
-        <button class="post-action save-action ${saved ? "is-saved" : ""}" type="button" data-action="save" data-id="${escapeHtml(post.id)}" aria-pressed="${saved}" aria-label="${saved ? "Remove from saved" : "Save post"}"><span aria-hidden="true">${saved ? "◆" : "◇"}</span></button>
-      </div>
-      <div class="comment-thread" data-comments-for="${escapeHtml(post.id)}" hidden>
-        <div class="comment-list">${comments.map((comment) => `<p><strong>${escapeHtml(comment.author)}</strong> ${escapeHtml(comment.text)}</p>`).join("")}</div>
-        <form class="comment-form" data-comment-form="${escapeHtml(post.id)}"><span class="avatar avatar-you">${escapeHtml(currentUser.initials)}</span><label class="visually-hidden" for="comment-${escapeHtml(post.id)}">Write a comment</label><input id="comment-${escapeHtml(post.id)}" name="comment" maxlength="240" placeholder="Add a kind thought…" required><button type="submit" aria-label="Send comment">↗</button></form>
-      </div>
-    </div>
-  </article>`;
-}
-
-function matchesSearch(post, value) {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return true;
-  return `${post.author} ${post.handle} ${post.caption}`.toLowerCase().includes(normalized);
-}
-
-function filteredPosts() {
-  let visible = activeView === "archive"
-    ? [...posts].sort((a, b) => a.createdAt - b.createdAt)
-    : posts;
-  if (activeView === "saved") visible = visible.filter((post) => interactions.savedIds.includes(post.id));
-  if (activeView === "following" || activeFilter === "following") {
-    visible = visible.filter((post) => post.authorEmail === currentUser.email || following.includes(post.handle));
-  }
-  if (activeView === "profile") visible = visible.filter((post) => post.authorEmail === currentUser.email);
-  if (activeView === "archive" && query.trim()) {
-    const term = query.trim().toLowerCase();
-    visible = visible.filter((post) => `${post.caption} ${post.author} ${post.fileName || ""} ${post.handle}`.toLowerCase().includes(term));
-  }
-  if (activeView === "calls") return [];
-  if (activeFilter === "video") visible = visible.filter((post) => post.kind === "video");
-  if (activeFilter === "photo") visible = visible.filter((post) => post.kind === "photo");
-  return visible.filter((post) => matchesSearch(post, query));
-}
-
-function updateHeader() {
-  const titles = {
-    home: ["", "For you", "Feed"],
-    archive: ["THE WORK STAYS HERE", "The ObVault <span>archive.</span>", "Past projects"],
-    calls: ["OPEN INVITATIONS · OBERLIN", "Make something <span>with someone.</span>", "Project calls"],
-    discover: ["A WORLD OF GOOD IDEAS", "Find something <span>that moves you.</span>", "Explore"],
-    following: ["THE PEOPLE YOU PICKED", "Your corner of <span>the community.</span>", "Following"],
-    saved: ["KEEP WHAT YOU LOVE", "Your collection <span>of good things.</span>", "Saved"],
-    profile: ["YOUR LITTLE CORNER", "Made and gathered <span>by you.</span>", "Your projects"]
-  };
-  const [eyebrow, title, heading] = titles[activeView] || titles.home;
-  document.querySelector("#welcome-date").textContent = eyebrow;
-  document.querySelector("#page-title").innerHTML = title;
-  document.querySelector("#feed-heading").textContent = heading;
-  document.querySelectorAll("[data-view].nav-link, .mobile-nav-link").forEach((button) => {
-    const selected = button.dataset.view === activeView;
-    button.classList.toggle("active", selected);
-    if (button.classList.contains("mobile-nav-link")) {
-      if (selected) button.setAttribute("aria-current", "page");
-      else button.removeAttribute("aria-current");
-    }
-  });
-}
-
-function render() {
-  if (!currentUser) return;
-  updateHeader();
-  const isHome = activeView === "home";
-  const isArchive = activeView === "archive";
-  const isCalls = activeView === "calls";
-  document.querySelector("#landing-hero").hidden = true;
-  document.querySelector("#stories-section").hidden = true;
-  document.querySelector("#welcome-row").hidden = isHome || isCalls;
-  document.querySelector("#right-rail").hidden = true;
-  document.querySelector("#feed-filters").hidden = isArchive || isCalls;
-  document.querySelector("#archive-tools").hidden = !isArchive;
-  document.querySelector("#post-list").hidden = isCalls;
-  callsList.hidden = !isCalls;
-  document.querySelector("#empty-state").hidden = isCalls || filteredPosts().length > 0;
-  document.querySelector("#load-more").hidden = isCalls || filteredPosts().length === 0;
-  document.querySelector("#open-call-form").hidden = !isCalls;
-  document.querySelector("#open-home-composer").hidden = !isHome;
-  document.querySelector(".feed-heading-row .eyebrow").textContent = isArchive ? "A RECORD OF MAKING" : isCalls ? "COLLABORATION BOARD" : "THE GOOD STUFF";
-  document.querySelector("#empty-state h3").textContent = isArchive ? "The archive is waiting." : "Nothing here just yet.";
-  document.querySelector("#empty-state p").textContent = isArchive ? "Try another search. Every project leaves a trace." : "Try another view, or be the first to share something.";
-  document.querySelector("#archive-search").value = isArchive ? query : "";
-  const visible = filteredPosts();
-  postList.innerHTML = visible.map(renderPost).join("");
-  emptyState.hidden = isCalls || visible.length > 0;
-  if (isCalls) renderCalls();
-  document.querySelectorAll(".filter-chip").forEach((button) => {
-    const selected = button.dataset.filter === activeFilter;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
-  renderSuggestions();
-}
-
-function renderCalls() {
-  const visible = calls
-    .filter((call) => `${call.title} ${call.role} ${call.description} ${call.type} ${call.author}`.toLowerCase().includes(query.trim().toLowerCase()))
-    .sort((a, b) => b.createdAt - a.createdAt);
-  callsList.innerHTML = visible.map((call) => {
-    const mine = call.authorEmail === currentUser.email;
-    return `<article class="call-card">
-      <div class="call-index"><span>OPEN CALL</span><strong>${escapeHtml(call.type.toUpperCase())}</strong><time>${timeAgo(call.createdAt)}</time></div>
-      <div class="call-body"><p class="eyebrow">${escapeHtml(call.author)} · ${escapeHtml(call.authorEmail)}</p><h3>${escapeHtml(call.title)}</h3><p class="call-role">LOOKING FOR <strong>${escapeHtml(call.role)}</strong></p><p class="call-description">${escapeHtml(call.description)}</p><a class="call-contact" href="mailto:${encodeURIComponent(call.contact)}?subject=${encodeURIComponent(`ObVault: ${call.title}`)}">GET IN TOUCH <span aria-hidden="true">↗</span></a></div>
-      ${mine ? `<button class="call-delete" type="button" data-delete-call="${escapeHtml(call.id)}">REMOVE LISTING</button>` : ""}
-    </article>`;
-  }).join("");
-  document.querySelector("#empty-state").hidden = visible.length > 0;
-  document.querySelector("#empty-state h3").textContent = "No open calls right now.";
-  document.querySelector("#empty-state p").textContent = "Post a project and find the people you need.";
-}
-
-function renderStories() {
-  document.querySelector("#stories").innerHTML = stories.map((story, index) => `
-    <button class="story-item" type="button" data-story="${index}" aria-label="View ${escapeHtml(story.name)}'s moment">
-      <span class="story-ring"><span class="avatar ${escapeHtml(story.avatar)}">${escapeHtml(story.initials)}</span></span>
-      <strong>${escapeHtml(story.name.split(" ")[0])}</strong>
-      <small>${escapeHtml(story.note)}</small>
-    </button>`).join("");
-}
-
-function renderSuggestions() {
-  document.querySelector("#suggested-people").innerHTML = people.map((person) => `
-    <div class="suggestion-row">
-      <span class="avatar ${escapeHtml(person.avatar)}">${escapeHtml(person.initials)}</span>
-      <span class="suggestion-info"><strong>${escapeHtml(person.name)}</strong><small>${escapeHtml(person.bio)}</small></span>
-      <button class="follow-button ${following.includes(person.handle) ? "following" : ""}" type="button" data-action="follow" data-handle="${escapeHtml(person.handle)}" aria-pressed="${following.includes(person.handle)}">${following.includes(person.handle) ? "Following" : "Follow"}</button>
-    </div>`).join("");
-}
-
-function openComposer(prefill = "") {
-  composerForm.reset();
-  captionInput.value = prefill;
-  characterCount.textContent = `${prefill.length} / 500`;
-  selectedFile = null;
-  clearPreview();
-  composer.showModal();
-  captionInput.focus();
-}
-
-function clearPreview() {
-  if (previewUrl) URL.revokeObjectURL(previewUrl);
-  previewUrl = null;
-  uploadPreview.replaceChildren();
-  uploadPreview.hidden = true;
-  selectedFile = null;
-  fileInput.value = "";
-}
-
-function closeDialogs() {
-  if (composer.open) composer.close();
-  if (storyDialog.open) storyDialog.close();
-  const callDialog = document.querySelector("#call-dialog");
-  if (callDialog.open) callDialog.close();
-}
-
-function openStory(index) {
-  const story = stories[index];
-  if (!story) return;
-  storyViewer.className = `story-viewer scene-${story.scene}`;
-  storyViewer.innerHTML = `<span class="story-progress"><i></i></span><div class="story-profile"><span class="avatar ${escapeHtml(story.avatar)}">${escapeHtml(story.initials)}</span><strong>${escapeHtml(story.name)}</strong><small>today</small></div><div class="story-art"><span class="scene-sun"></span><span class="scene-shape shape-one"></span><span class="scene-shape shape-two"></span><p>${escapeHtml(story.note)}</p></div><button class="story-reply" type="button" data-story-reply="${escapeHtml(story.name)}">Send a little love <span>♡</span></button>`;
-  storyDialog.showModal();
-}
-
-function saveAndRender() {
-  savePosts();
-  render();
-}
-
-document.addEventListener("click", async (event) => {
-  const viewButton = event.target.closest("[data-view]");
-  if (viewButton) {
-    event.preventDefault();
-    activeView = viewButton.dataset.view;
-    activeFilter = "all";
-    query = "";
-    searchInput.value = "";
-    render();
-  }
-
-  const authTab = event.target.closest("[data-auth-mode]");
-  if (authTab) setAuthMode(authTab.dataset.authMode);
-
-  if (event.target.closest("[data-theme-toggle]")) {
-    setTheme(currentTheme === "dark" ? "light" : "dark");
-  }
-
-  if (event.target.closest("#hero-create")) openComposer();
-
-  if (event.target.closest("#open-call-form")) {
-    document.querySelector("#call-error").hidden = true;
-    document.querySelector("#call-form").reset();
-    document.querySelector("#call-contact").value = currentUser.email;
-    document.querySelector("#call-dialog").showModal();
-  }
-
-  const deleteCall = event.target.closest("[data-delete-call]");
-  if (deleteCall) {
-    const call = calls.find((item) => item.id === deleteCall.dataset.deleteCall);
-    if (!call || call.authorEmail !== currentUser.email) return;
-    calls = calls.filter((item) => item.id !== call.id);
-    if (persist(CALLS_KEY, calls)) render();
-  }
-
-  const demoLogin = event.target.closest("[data-demo-login]");
-  if (demoLogin) {
-    const account = DEMO_ACCOUNTS.find((item) => item.email === demoLogin.dataset.demoLogin);
-    if (!account) return;
-    try {
-      await enterApp(await authProvider.login(account.email, account.password));
-    } catch (error) {
-      showAuthError(loginForm, error instanceof Error ? error.message : "Couldn't open this demo account.");
-    }
-  }
-
-  if (event.target.closest("#logout")) {
-    try {
-      await authProvider.logout();
-      leaveApp();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Couldn't log out.");
-    }
-  }
-
-  const toastButton = event.target.closest("[data-toast]");
-  if (toastButton) showToast(toastButton.dataset.toast);
-
-  const searchButton = event.target.closest("[data-search]");
-  if (searchButton) {
-    searchInput.value = searchButton.dataset.search;
-    query = searchInput.value;
-    activeView = "discover";
-    activeFilter = "all";
-    render();
-    searchInput.focus();
-  }
-
-  const openButton = event.target.closest("#open-composer, [data-open-composer]");
-  if (openButton) {
-    if (activeView === "calls") {
-      document.querySelector("#call-error").hidden = true;
-      document.querySelector("#call-form").reset();
-      document.querySelector("#call-contact").value = currentUser.email;
-      document.querySelector("#call-dialog").showModal();
-    } else {
-      openComposer();
-    }
-  }
-
-  if (event.target.closest("[data-close-dialog]")) closeDialogs();
-
-  const chip = event.target.closest("[data-filter]");
-  if (chip) {
-    activeFilter = chip.dataset.filter;
-    activeView = "home";
-    render();
-  }
-
-  const storyButton = event.target.closest("[data-story]");
-  if (storyButton) openStory(Number(storyButton.dataset.story));
-
-  const replyButton = event.target.closest("[data-story-reply]");
-  if (replyButton) {
-    storyDialog.close();
-    showToast(`A little love sent to ${replyButton.dataset.story.split(" ")[0]}.`);
-  }
-
-  const personButton = event.target.closest("[data-person]");
-  if (personButton) {
-    activeView = "discover";
-    activeFilter = "all";
-    searchInput.value = personButton.dataset.person;
-    query = personButton.dataset.person;
-    render();
-  }
-
-  const promptButton = event.target.closest("#prompt-post");
-  if (promptButton) openComposer("A tiny thing that made today better: ");
-
-  const action = event.target.closest("[data-action]");
-  if (!action) return;
-  const post = posts.find((item) => item.id === action.dataset.id);
-  if (action.dataset.action === "follow") {
-    const handle = action.dataset.handle;
-    following = following.includes(handle) ? following.filter((item) => item !== handle) : [...following, handle];
-    saveProfile();
-    render();
-    return;
-  }
-  if (!post) return;
-  if (action.dataset.action === "like") {
-    const liked = interactions.likedIds.includes(post.id);
-    interactions.likedIds = liked
-      ? interactions.likedIds.filter((id) => id !== post.id)
-      : [...interactions.likedIds, post.id];
-    saveProfile();
-    render();
-  } else if (action.dataset.action === "save") {
-    const saved = interactions.savedIds.includes(post.id);
-    interactions.savedIds = saved
-      ? interactions.savedIds.filter((id) => id !== post.id)
-      : [...interactions.savedIds, post.id];
-    saveProfile();
-    render();
-    showToast(saved ? "Removed from your collection." : "Saved to your collection.");
-  } else if (action.dataset.action === "comments") {
-    const thread = postList.querySelector(`[data-comments-for="${CSS.escape(post.id)}"]`);
-    thread.hidden = !thread.hidden;
-    action.setAttribute("aria-expanded", String(!thread.hidden));
-    if (!thread.hidden) thread.querySelector("input").focus();
-  } else if (action.dataset.action === "play") {
-    const scene = action.closest(".visual-card");
-    scene.classList.toggle("is-playing");
-    action.setAttribute("aria-label", scene.classList.contains("is-playing") ? "Pause preview" : "Play preview");
-  } else if (action.dataset.action === "share") {
-    const shareUrl = `${window.location.origin}${window.location.pathname}#post-${encodeURIComponent(post.id)}`;
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(shareUrl);
-        showToast("Post link copied.");
-      } catch {
-        showToast(shareUrl);
+      controls.append(volume);
+      meta.append(color, info, controls);
+
+      const grid = document.createElement("div");
+      grid.className = "steps-grid";
+      grid.setAttribute("role", "group");
+      grid.setAttribute("aria-label", `${track.name} steps`);
+      for (let step = 0; step < state.steps; step += 1) {
+        const cell = document.createElement("button");
+        cell.className = `step-cell${track.cells[step] ? " is-on" : ""}`;
+        cell.type = "button";
+        cell.dataset.step = String(step);
+        cell.setAttribute("aria-label", `${track.name}, step ${step + 1}${track.cells[step] ? ", on" : ", off"}`);
+        cell.setAttribute("aria-pressed", String(track.cells[step]));
+        if (state.currentStep === step) cell.classList.add("is-playhead");
+        cell.addEventListener("click", () => {
+          track.cells[step] = !track.cells[step];
+          cell.classList.toggle("is-on", track.cells[step]);
+          cell.setAttribute("aria-pressed", String(track.cells[step]));
+          cell.setAttribute("aria-label", `${track.name}, step ${step + 1}${track.cells[step] ? ", on" : ", off"}`);
+          saveState();
+        });
+        grid.append(cell);
       }
-    } else {
-      showToast("Share link: " + shareUrl);
-    }
-  } else if (action.dataset.action === "delete" && post.authorEmail === currentUser.email) {
-    if (!window.confirm("Delete this post? This can't be undone.")) return;
-    posts = posts.filter((item) => item.id !== post.id);
-    if (post.attachmentId) {
-      try { await removeAttachment(post.attachmentId); }
-      catch { showToast("Post removed, but its local media couldn't be cleared."); }
-    }
-    const media = mediaUrls.get(post.id);
-    if (media) URL.revokeObjectURL(media.url);
-    mediaUrls.delete(post.id);
-    saveAndRender();
-    showToast("Your post was removed.");
-  } else if (action.dataset.action === "more") {
-    const options = action.closest(".post-options");
-    const menu = options.querySelector(".post-options-menu");
-    if (menu) {
-      menu.hidden = !menu.hidden;
-      action.setAttribute("aria-expanded", String(!menu.hidden));
-    } else {
-      showToast("Thanks for helping keep ObVault thoughtful.");
-    }
-  }
-});
-
-postList.addEventListener("submit", (event) => {
-  const form = event.target.closest("[data-comment-form]");
-  if (!form) return;
-  event.preventDefault();
-  const post = posts.find((item) => item.id === form.dataset.commentForm);
-  const input = form.elements.comment;
-  const text = input.value.trim();
-  if (!post || !text) return;
-  post.comments.push({ id: crypto.randomUUID(), author: currentUser.name, authorEmail: currentUser.email, text });
-  saveAndRender();
-  const thread = postList.querySelector(`[data-comments-for="${CSS.escape(post.id)}"]`);
-  thread.hidden = false;
-  thread.querySelector("input").focus();
-});
-
-searchInput.addEventListener("input", () => {
-  query = searchInput.value;
-  if (query && activeView === "home") activeView = "discover";
-  render();
-});
-
-document.querySelector("#archive-search").addEventListener("input", (event) => {
-  query = event.target.value;
-  render();
-});
-
-document.querySelector("#call-form").addEventListener("submit", (event) => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  const error = document.querySelector("#call-error");
-  error.hidden = true;
-  const contact = normalizeEmail(form.elements.namedItem("contact").value);
-  if (!isOberlinEmail(contact)) {
-    error.textContent = "Use an @oberlin.edu contact address.";
-    error.hidden = false;
-    return;
-  }
-  const listing = {
-    id: crypto.randomUUID(),
-    author: currentUser.name,
-    authorEmail: currentUser.email,
-    title: form.elements.namedItem("title").value.trim(),
-    role: form.elements.namedItem("role").value.trim(),
-    description: form.elements.namedItem("description").value.trim(),
-    type: form.elements.namedItem("type").value,
-    contact,
-    createdAt: Date.now()
-  };
-  if (!listing.title || !listing.role || !listing.description) {
-    error.textContent = "Fill in the title, role, and project description.";
-    error.hidden = false;
-    return;
-  }
-  calls.unshift(listing);
-  if (!persist(CALLS_KEY, calls)) {
-    calls.shift();
-    error.textContent = "Couldn't save this listing in local browser storage.";
-    error.hidden = false;
-    return;
-  }
-  document.querySelector("#call-dialog").close();
-  activeView = "calls";
-  query = "";
-  searchInput.value = "";
-  render();
-  showToast("Your project call is posted.");
-});
-
-loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  hideAuthError(loginForm);
-  const submit = loginForm.querySelector(".auth-submit");
-  submit.disabled = true;
-  try {
-    const user = await authProvider.login(loginForm.elements.namedItem("email").value, loginForm.elements.namedItem("password").value);
-    await enterApp(user);
-  } catch (error) {
-    showAuthError(loginForm, error instanceof Error ? error.message : "Couldn't log in.");
-  } finally {
-    submit.disabled = false;
-  }
-});
-
-registerForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  hideAuthError(registerForm);
-  const status = document.querySelector("#register-status");
-  status.hidden = true;
-  status.textContent = "";
-  const submit = registerForm.querySelector(".auth-submit");
-  submit.disabled = true;
-  try {
-    const result = await authProvider.register({
-      name: registerForm.elements.namedItem("name").value,
-      email: registerForm.elements.namedItem("email").value,
-      password: registerForm.elements.namedItem("password").value
+      row.append(meta, grid);
+      trackList.append(row);
     });
-    if (result.verificationRequired) {
-      status.textContent = "Check your Oberlin inbox to verify your address before logging in.";
-      status.hidden = false;
-      registerForm.reset();
+    $("#track-count").textContent = String(state.tracks.length).padStart(2, "0");
+  }
+
+  function makeTrackButton(type, label, track) {
+    const button = document.createElement("button");
+    button.className = `track-icon-button${(type === "mute" && track.muted) || (type === "solo" && track.solo) ? " is-active" : ""}`;
+    button.type = "button";
+    button.setAttribute("aria-label", label);
+    button.setAttribute("title", label);
+    if (type === "sample") {
+      button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>';
+      button.addEventListener("click", () => {
+        state.sampleTrackId = track.id;
+        sampleInput.click();
+      });
+      return button;
+    }
+    if (type === "mute") {
+      button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 8v4h3l4 3V5L7 8H4Z" /><path d="m14 8 4 4m0-4-4 4" /></svg>';
+    } else {
+      button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="6.5" /><path d="M10 7v6m-2-3h4" /></svg>';
+    }
+    button.setAttribute("aria-pressed", String(type === "mute" ? track.muted : track.solo));
+    button.addEventListener("click", () => {
+      if (type === "mute") track.muted = !track.muted;
+      else track.solo = !track.solo;
+      renderTracks();
+      updateTrackGains();
+      saveState();
+    });
+    return button;
+  }
+
+  function renderPresets() {
+    patternCards.innerHTML = "";
+    PRESETS.forEach((preset) => {
+      const card = document.createElement("button");
+      card.className = `pattern-card${state.selectedPreset === preset.id ? " is-selected" : ""}`;
+      card.type = "button";
+      card.style.setProperty("--pattern-color", preset.color);
+      card.setAttribute("aria-pressed", String(state.selectedPreset === preset.id));
+      card.innerHTML = `<span class="pattern-card-tag">${preset.tag}</span><span class="pattern-card-title">${preset.title}</span><span class="pattern-card-description">${preset.description}</span>`;
+      card.addEventListener("click", () => loadPreset(preset));
+      patternCards.append(card);
+    });
+  }
+
+  function loadPreset(preset) {
+    state.selectedPreset = preset.id;
+    state.bpm = preset.bpm;
+    tempoValue.textContent = String(state.bpm);
+    state.tracks.forEach((track) => {
+      track.cells.fill(false);
+      (preset.hits[track.id] || []).forEach((step) => { track.cells[step] = true; });
+    });
+    renderTracks();
+    renderPresets();
+    updateArrangementLength();
+    if (state.view === "arrangement") renderArrangement();
+    saveState();
+    showToast(`${preset.title} pattern loaded`);
+  }
+
+  function setLength(steps) {
+    state.steps = steps;
+    document.querySelectorAll(".length-button").forEach((button) => {
+      const selected = Number(button.dataset.steps) === steps;
+      button.classList.toggle("is-selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    $("#bar-label").textContent = steps === 16 ? "1 BAR" : "2 BARS";
+    renderHeader();
+    renderTracks();
+    if (state.view === "arrangement") renderArrangement();
+    if (state.currentStep >= steps) state.currentStep = -1;
+    saveState();
+  }
+
+  function initializeAudio() {
+    if (!state.audioContext) {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) throw new Error("Web Audio is not supported in this browser.");
+      state.audioContext = new AudioContext();
+      state.masterGain = state.audioContext.createGain();
+      state.masterGain.gain.value = 0.82;
+      state.masterGain.connect(state.audioContext.destination);
+      state.tracks.forEach(ensureSequencerTrackAudio);
+      state.noiseBuffer = createNoiseBuffer(state.audioContext);
+    }
+    state.arrangementTracks.forEach(ensureArrangementTrackAudio);
+    return state.audioContext;
+  }
+
+  function ensureAudio() {
+    const context = initializeAudio();
+    return context.resume();
+  }
+
+  function createNoiseBuffer(context) {
+    const buffer = context.createBuffer(1, context.sampleRate, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) data[index] = Math.random() * 2 - 1;
+    return buffer;
+  }
+
+  function getStepDuration() {
+    return 60 / state.bpm / 4;
+  }
+
+  function scheduleStep(step, time) {
+    state.tracks.forEach((track) => {
+      if (track.cells[step] && !track.muted && (!state.tracks.some((item) => item.solo) || track.solo)) {
+        triggerTrack(track, time, step);
+      }
+    });
+    if (state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
+
+    const displayDelay = Math.max(0, (time - state.audioContext.currentTime) * 1000);
+    const timerId = window.setTimeout(() => {
+      state.stepTimers.delete(timerId);
+      if (state.isPlaying) setPlayhead(step);
+    }, displayDelay);
+    state.stepTimers.add(timerId);
+  }
+
+  function scheduler() {
+    if (state.view === "arrangement" && state.isPlaying) {
+      if (state.audioContext.currentTime >= state.playbackEndTime) {
+        stopPlayback();
+        return;
+      }
+      const elapsed = Math.max(0, state.audioContext.currentTime - state.playbackStartTime);
+      state.arrangementCursor = Math.min(state.arrangementBars, state.playbackStartBar + elapsed / (240 / state.bpm));
+      updateArrangementCursorMarker();
+    }
+    const lookAhead = 0.12;
+    while (
+      state.nextStepTime < state.audioContext.currentTime + lookAhead &&
+      (state.view !== "arrangement" || state.nextStepTime < state.playbackEndTime)
+    ) {
+      const step = state.stepIndex;
+      const swingOffset = step % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
+      scheduleStep(step, state.nextStepTime + swingOffset);
+      state.nextStepTime += getStepDuration();
+      state.stepIndex = (step + 1) % state.steps;
+    }
+  }
+
+  function setPlayhead(step) {
+    state.currentStep = step;
+    document.querySelectorAll(".step-cell.is-playhead").forEach((cell) => cell.classList.remove("is-playhead"));
+    document.querySelectorAll(`.step-cell[data-step="${step}"]`).forEach((cell) => cell.classList.add("is-playhead"));
+  }
+
+  function makeId() {
+    return window.crypto?.randomUUID?.() || `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function isAudioFile(file) {
+    return file.type.startsWith("audio/") || /\.(wav|wave|mp3|m4a|aac|flac|ogg|opus|webm|aiff?)$/i.test(file.name);
+  }
+
+  function createArrangementTrack(name = "Audio track") {
+    const track = {
+      id: makeId(),
+      name,
+      color: TRACK_COLORS[state.arrangementTracks.length % TRACK_COLORS.length],
+      clips: [],
+      volume: 0.8,
+      muted: false,
+      solo: false,
+      gainNode: null,
+    };
+    state.arrangementTracks.push(track);
+    ensureArrangementTrackAudio(track);
+    return track;
+  }
+
+  function ensureArrangementTrackAudio(track) {
+    if (!state.audioContext || track.gainNode) return;
+    track.gainNode = state.audioContext.createGain();
+    track.gainNode.gain.value = track.muted ? 0 : track.volume;
+    track.gainNode.connect(state.masterGain);
+  }
+
+  function ensureSequencerTrackAudio(track) {
+    if (!state.audioContext || track.gainNode) return;
+    track.gainNode = state.audioContext.createGain();
+    track.gainNode.gain.value = track.volume;
+    track.gainNode.connect(state.masterGain);
+  }
+
+  function updateArrangementLength() {
+    const secondsPerBar = 240 / state.bpm;
+    const clipEnd = state.arrangementTracks.reduce((latest, track) => {
+      return track.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.buffer.duration / secondsPerBar), latest);
+    }, 8);
+    state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, Math.max(state.arrangementBars, Math.ceil(clipEnd)));
+    if (state.playbackStartTime && state.isPlaying && state.view === "arrangement") {
+      state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - state.playbackStartBar) * secondsPerBar;
+    }
+    $("#arrangement-bar-label").textContent = `${state.arrangementBars} BARS`;
+  }
+
+  function renderArrangement() {
+    const empty = $("#arrangement-empty");
+    const editor = $("#arrangement-editor");
+    const hasTracks = state.arrangementTracks.length > 0;
+    empty.hidden = hasTracks;
+    editor.hidden = !hasTracks;
+    $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length);
+    $("#arrangement-track-count").textContent = String(state.arrangementTracks.length + 1).padStart(2, "0");
+    if (!hasTracks) return;
+
+    const width = state.arrangementBars * BAR_WIDTH;
+    const labels = $("#arrangement-track-labels");
+    const content = $("#timeline-content");
+    labels.replaceChildren();
+    content.replaceChildren();
+    content.style.width = `${width}px`;
+
+    const ruler = document.createElement("div");
+    ruler.className = "timeline-ruler";
+    ruler.style.width = `${width}px`;
+    ruler.style.gridTemplateColumns = `repeat(${state.arrangementBars}, ${BAR_WIDTH}px)`;
+    for (let bar = 0; bar < state.arrangementBars; bar += 1) {
+      const marker = document.createElement("div");
+      marker.className = "timeline-bar";
+      marker.textContent = `BAR ${String(bar + 1).padStart(2, "0")}`;
+      ruler.append(marker);
+    }
+    content.append(ruler);
+
+    const drumLabel = document.createElement("div");
+    drumLabel.className = "arrangement-label";
+    drumLabel.innerHTML = '<span class="track-color" style="--track-color:var(--accent)"></span><div class="arrangement-label-info"><div class="arrangement-label-name">Drum pattern</div><div class="arrangement-label-type">Sequencer loop</div></div>';
+    labels.append(drumLabel);
+
+    const drumLane = createTimelineLane("drums", width);
+    const patternBars = state.steps / 16;
+    for (let bar = 0; bar < state.arrangementBars; bar += patternBars) {
+      const block = document.createElement("div");
+      block.className = "drum-arrangement-clip";
+      block.style.left = `${bar * BAR_WIDTH + 4}px`;
+      block.style.width = `${Math.max(28, patternBars * BAR_WIDTH - 8)}px`;
+      block.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg>';
+      const text = document.createElement("span");
+      text.textContent = `BEAT LOOP · ${patternBars} BAR${patternBars > 1 ? "S" : ""}`;
+      block.append(text);
+      drumLane.append(block);
+    }
+    content.append(drumLane);
+
+    state.arrangementTracks.forEach((track) => {
+      const label = document.createElement("div");
+      label.className = "arrangement-label";
+      label.style.setProperty("--track-color", track.color);
+      const color = document.createElement("span");
+      color.className = "track-color";
+      const info = document.createElement("div");
+      info.className = "arrangement-label-info";
+      const name = document.createElement("div");
+      name.className = "arrangement-label-name";
+      name.textContent = track.name;
+      const type = document.createElement("div");
+      type.className = "arrangement-label-type";
+      type.textContent = `${track.clips.length} recording${track.clips.length === 1 ? "" : "s"}`;
+      info.append(name, type);
+      const actions = document.createElement("div");
+      actions.className = "arrangement-label-actions";
+      const add = document.createElement("button");
+      add.type = "button";
+      add.title = "Add a recording to this track";
+      add.setAttribute("aria-label", `Add recording to ${track.name}`);
+      add.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>';
+      add.addEventListener("click", () => requestRecordingImport(track.id));
+      const mute = document.createElement("button");
+      mute.type = "button";
+      mute.className = track.muted ? "is-active" : "";
+      mute.title = track.muted ? "Unmute track" : "Mute track";
+      mute.setAttribute("aria-label", mute.title);
+      mute.setAttribute("aria-pressed", String(track.muted));
+      mute.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 8v4h3l4 3V5L7 8H4Z" /><path d="m14 8 4 4m0-4-4 4" /></svg>';
+      mute.addEventListener("click", () => {
+        track.muted = !track.muted;
+        updateTrackGains();
+        renderArrangement();
+        persistTrackClips(track);
+      });
+      actions.append(add, mute);
+      const volume = document.createElement("input");
+      volume.className = "arrangement-volume";
+      volume.type = "range";
+      volume.min = "0";
+      volume.max = "100";
+      volume.value = String(Math.round(track.volume * 100));
+      volume.setAttribute("aria-label", `${track.name} volume`);
+      volume.addEventListener("input", () => {
+        track.volume = Number(volume.value) / 100;
+        updateTrackGains();
+      });
+      volume.addEventListener("change", () => persistTrackClips(track));
+      label.append(color, info, actions, volume);
+      labels.append(label);
+
+      const lane = createTimelineLane(track.id, width);
+      track.clips.forEach((clip) => lane.append(createAudioClip(track, clip)));
+      content.append(lane);
+    });
+    updateArrangementCursorMarker();
+  }
+
+  function createTimelineLane(trackId, width) {
+    const lane = document.createElement("div");
+    lane.className = "timeline-lane";
+    lane.dataset.trackId = trackId;
+    lane.style.width = `${width}px`;
+    lane.style.setProperty("--bar-width", `${BAR_WIDTH}px`);
+    lane.style.setProperty("--beat-width", `${BAR_WIDTH / 4}px`);
+    lane.addEventListener("click", (event) => {
+      if (event.target.closest(".audio-clip")) return;
+      setArrangementCursor(barAtPointer(event, lane));
+    });
+    lane.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      lane.classList.add("is-drop-target");
+      if (event.dataTransfer) event.dataTransfer.dropEffect = event.dataTransfer.files.length ? "copy" : "move";
+    });
+    lane.addEventListener("dragleave", (event) => {
+      if (!lane.contains(event.relatedTarget)) lane.classList.remove("is-drop-target");
+    });
+    lane.addEventListener("drop", async (event) => {
+      event.preventDefault();
+      lane.classList.remove("is-drop-target");
+      const startBar = barAtPointer(event, lane);
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (files.length) {
+        for (const file of files) await importRecording(file, trackId === "drums" ? null : trackId, startBar);
+        return;
+      }
+      const transfer = event.dataTransfer?.getData("application/x-pulsegrid-clip");
+      if (!transfer || trackId === "drums") return;
+      try {
+        const { clipId, sourceTrackId } = JSON.parse(transfer);
+        moveArrangementClip(clipId, sourceTrackId, trackId, startBar);
+      } catch {
+        showToast("That audio clip could not be moved.");
+      }
+    });
+    const cursor = document.createElement("div");
+    cursor.className = "arrangement-cursor";
+    lane.append(cursor);
+    return lane;
+  }
+
+  function barAtPointer(event, lane) {
+    const bar = Math.floor((event.clientX - lane.getBoundingClientRect().left) / BAR_WIDTH);
+    return Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, bar));
+  }
+
+  function createAudioClip(track, clip) {
+    const element = document.createElement("div");
+    element.className = "audio-clip";
+    element.draggable = true;
+    element.dataset.clipId = clip.id;
+    element.style.setProperty("--clip-color", track.color);
+    element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
+    element.style.width = `${Math.max(64, clip.buffer.duration / (240 / state.bpm) * BAR_WIDTH - 8)}px`;
+    element.setAttribute("aria-label", `${clip.name}, bar ${clip.startBar + 1}; drag to move`);
+
+    const waveform = document.createElement("span");
+    waveform.className = "clip-waveform";
+    const samples = clip.buffer.getChannelData(0);
+    const peakCount = Math.max(12, Math.min(48, Math.floor(clip.buffer.duration * 5)));
+    const stride = Math.max(1, Math.floor(samples.length / peakCount));
+    const sampleStride = Math.max(1, Math.floor(stride / 80));
+    for (let index = 0; index < peakCount; index += 1) {
+      let peak = 0;
+      const start = index * stride;
+      for (let sample = start; sample < Math.min(samples.length, start + stride); sample += sampleStride) peak = Math.max(peak, Math.abs(samples[sample]));
+      const bar = document.createElement("i");
+      bar.style.height = `${Math.max(8, Math.round(peak * 82))}%`;
+      waveform.append(bar);
+    }
+    const name = document.createElement("span");
+    name.className = "clip-name";
+    name.textContent = clip.name;
+    const remove = document.createElement("button");
+    remove.className = "clip-remove";
+    remove.type = "button";
+    remove.textContent = "×";
+    remove.title = "Remove recording";
+    remove.setAttribute("aria-label", `Remove ${clip.name}`);
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeArrangementClip(track.id, clip.id);
+    });
+    element.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("application/x-pulsegrid-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    });
+    element.addEventListener("click", (event) => {
+      if (event.target.closest(".clip-remove")) return;
+      setArrangementCursor(clip.startBar);
+    });
+    element.append(waveform, name, remove);
+    return element;
+  }
+
+  function updateArrangementCursorMarker() {
+    document.querySelectorAll(".arrangement-cursor").forEach((marker) => {
+      marker.style.left = `${state.arrangementCursor * BAR_WIDTH}px`;
+    });
+  }
+
+  function setArrangementCursor(bar) {
+    if (state.isPlaying) stopPlayback();
+    state.arrangementCursor = Math.max(0, Math.min(state.arrangementBars - 1, Math.floor(bar)));
+    updateArrangementCursorMarker();
+    saveState();
+  }
+
+  function setWorkspaceView(view, force = false) {
+    if (view === state.view && !force) return;
+    if (state.isPlaying) stopPlayback();
+    state.view = view;
+    const showArrangement = view === "arrangement";
+    $("#sequencer-view").hidden = showArrangement;
+    $("#arrangement-view").hidden = !showArrangement;
+    $("#sequencer-tab").classList.toggle("is-selected", !showArrangement);
+    $("#sequencer-tab").setAttribute("aria-selected", String(!showArrangement));
+    $("#arrangement-tab").classList.toggle("is-selected", showArrangement);
+    $("#arrangement-tab").setAttribute("aria-selected", String(showArrangement));
+    if (showArrangement) renderArrangement();
+    saveState();
+  }
+
+  function requestRecordingImport(trackId = null) {
+    state.pendingImportTrackId = trackId;
+    const input = $("#recording-input");
+    input.value = "";
+    input.click();
+  }
+
+  async function importRecording(file, trackId = null, startBar = state.arrangementCursor) {
+    if (!isAudioFile(file)) {
+      showToast(`"${file.name}" is not an audio file.`);
       return;
     }
-    const user = result.user || await authProvider.current();
-    if (!user) throw new Error("Account was created, but no signed-in session was returned. Log in to continue.");
-    await enterApp(user);
-  } catch (error) {
-    showAuthError(registerForm, error instanceof Error ? error.message : "Couldn't create your account.");
-  } finally {
-    submit.disabled = false;
-  }
-});
-
-document.addEventListener("keydown", (event) => {
-  if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
-    event.preventDefault();
-    searchInput.focus();
-  }
-  if (event.key === "Escape") closeDialogs();
-});
-
-composer.addEventListener("click", (event) => {
-  if (event.target === composer) composer.close();
-});
-
-composer.addEventListener("close", clearPreview);
-
-captionInput.addEventListener("input", () => {
-  characterCount.textContent = `${captionInput.value.length} / 500`;
-});
-
-fileInput.addEventListener("change", () => {
-  const file = fileInput.files?.[0];
-  if (!file) return;
-  if (file.size > 100 * 1024 * 1024) {
-    showToast("Choose a file smaller than 100 MB for this local demo.");
-    fileInput.value = "";
-    return;
-  }
-  clearPreview();
-  selectedFile = file;
-  previewUrl = URL.createObjectURL(file);
-  uploadPreview.replaceChildren();
-  const kind = mediaKind(file.name, file.type);
-  if (kind === "video") {
-    const video = document.createElement("video");
-    video.src = previewUrl;
-    video.controls = true;
-    video.muted = true;
-    uploadPreview.append(video);
-  } else if (kind === "image") {
-    const image = document.createElement("img");
-    image.src = previewUrl;
-    image.alt = "Selected upload preview";
-    uploadPreview.append(image);
-  } else if (kind === "pdf") {
-    const frame = document.createElement("iframe");
-    frame.src = previewUrl;
-    frame.title = `PDF preview: ${file.name}`;
-    frame.setAttribute("sandbox", "");
-    uploadPreview.append(frame);
-  } else {
-    const details = document.createElement("p");
-    details.textContent = `${file.name} · ${file.type || "File"} · ${formatFileSize(file.size)}`;
-    uploadPreview.append(details);
-  }
-  uploadPreview.hidden = false;
-});
-
-composerForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const caption = captionInput.value.trim();
-  if (!caption) {
-    captionInput.focus();
-    return;
-  }
-  publishButton.disabled = true;
-  publishButton.textContent = "Sharing…";
-  const id = crypto.randomUUID();
-  const attachmentId = selectedFile ? id : null;
-  const file = selectedFile;
-  try {
-  if (file) await writeAttachment(id, file);
-  const post = {
-    id, author: currentUser.name, authorEmail: currentUser.email, handle: currentUser.handle,
-    initials: currentUser.initials || currentUser.name[0], avatar: currentUser.avatar || "avatar-you",
-    createdAt: Date.now(), kind: file ? (mediaKind(file.name, file.type) === "video" ? "video" : mediaKind(file.name, file.type) === "image" ? "photo" : "file") : "text",
-    scene: "garden", caption, likes: 0, liked: false, saved: false, comments: [],
-    attachmentId, fileName: file?.name, fileType: file?.type, fileSize: file?.size
-  };
-  posts.unshift(post);
-  if (!savePosts()) {
-    posts.shift();
-    if (attachmentId) await removeAttachment(attachmentId);
-    return;
-  }
-  if (file) mediaUrls.set(id, {
-    url: previewUrl, type: file.type || "application/octet-stream", kind: mediaKind(file.name, file.type), name: file.name, size: file.size
-  });
-    previewUrl = null;
-    selectedFile = null;
-    composer.close();
-    activeView = "home";
-    activeFilter = "all";
-    query = "";
-    searchInput.value = "";
-    render();
-    showToast("Your moment is out in the world.");
-  } catch (error) {
-    showToast(error instanceof Error ? error.message : "Couldn't save your post.");
-  } finally {
-    publishButton.disabled = false;
-    publishButton.innerHTML = 'Share post <span aria-hidden="true">↗</span>';
-  }
-});
-
-async function loadSavedMedia() {
-  const saved = posts.filter((post) => post.attachmentId);
-  for (const post of saved) {
     try {
-      const file = await readAttachment(post.attachmentId);
-      if (file) {
-        mediaUrls.set(post.id, {
-          url: URL.createObjectURL(file),
-          type: file.type || post.fileType || "application/octet-stream",
-          kind: mediaKind(post.fileName || "", file.type || post.fileType || ""),
-          name: post.fileName || "Download attachment",
-          size: file.size
+      await ensureAudio();
+      const buffer = await state.audioContext.decodeAudioData(await file.arrayBuffer());
+      let track = state.arrangementTracks.find((item) => item.id === trackId);
+      if (!track) track = createArrangementTrack(file.name.replace(/\.[^.]+$/, "") || "Audio track");
+      const clip = { id: makeId(), name: file.name, buffer, startBar: Math.max(0, Math.floor(startBar)), blob: file };
+      track.clips.push(clip);
+      track.clips.sort((left, right) => left.startBar - right.startBar);
+      updateArrangementLength();
+      renderArrangement();
+      saveState();
+      try {
+        await persistClip(track, clip);
+      } catch {
+        showToast("Recording added for this session, but browser storage is unavailable.");
+      }
+    } catch (error) {
+      showToast(`Could not import ${file.name}: ${error.message || "unsupported audio format"}`);
+    }
+  }
+
+  function moveArrangementClip(clipId, sourceTrackId, destinationTrackId, startBar) {
+    const source = state.arrangementTracks.find((track) => track.id === sourceTrackId);
+    const destination = state.arrangementTracks.find((track) => track.id === destinationTrackId);
+    const clipIndex = source?.clips.findIndex((clip) => clip.id === clipId) ?? -1;
+    if (!source || !destination || clipIndex < 0) return;
+    const [clip] = source.clips.splice(clipIndex, 1);
+    clip.startBar = startBar;
+    destination.clips.push(clip);
+    destination.clips.sort((left, right) => left.startBar - right.startBar);
+    if (source !== destination && source.clips.length === 0) {
+      state.arrangementTracks = state.arrangementTracks.filter((track) => track !== source);
+    }
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+    persistClip(destination, clip).catch(() => showToast("Clip moved, but browser storage could not be updated."));
+    if (source !== destination) persistTrackClips(source);
+  }
+
+  function removeArrangementClip(trackId, clipId) {
+    const track = state.arrangementTracks.find((item) => item.id === trackId);
+    if (!track) return;
+    track.clips = track.clips.filter((clip) => clip.id !== clipId);
+    if (track.clips.length === 0) state.arrangementTracks = state.arrangementTracks.filter((item) => item !== track);
+    deletePersistedClip(clipId);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
+  function openRecordingDb() {
+    if (!window.indexedDB) return Promise.reject(new Error("IndexedDB is unavailable"));
+    return new Promise((resolve, reject) => {
+      const request = window.indexedDB.open("pulsegrid-recordings", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("recordings")) request.result.createObjectStore("recordings", { keyPath: "id" });
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Could not open recording storage"));
+    });
+  }
+
+  function persistClip(track, clip) {
+    return openRecordingDb().then((database) => new Promise((resolve, reject) => {
+      const transaction = database.transaction("recordings", "readwrite");
+      transaction.objectStore("recordings").put({
+        id: clip.id,
+        trackId: track.id,
+        trackName: track.name,
+        color: track.color,
+        name: clip.name,
+        startBar: clip.startBar,
+        volume: track.volume,
+        muted: track.muted,
+        blob: clip.blob,
+      });
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not save recording")); };
+      transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Recording save was cancelled")); };
+    }));
+  }
+
+  function persistTrackClips(track) {
+    track.clips.forEach((clip) => persistClip(track, clip).catch(() => {
+      showToast("Could not save the latest track changes.");
+    }));
+  }
+
+  function deletePersistedClip(clipId) {
+    openRecordingDb().then((database) => new Promise((resolve, reject) => {
+      const transaction = database.transaction("recordings", "readwrite");
+      transaction.objectStore("recordings").delete(clipId);
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not remove recording")); };
+    })).catch(() => showToast("The clip was removed, but browser storage could not be updated."));
+  }
+
+  async function restoreArrangement() {
+    if (!window.indexedDB) return;
+    try {
+      const database = await openRecordingDb();
+      const records = await new Promise((resolve, reject) => {
+        const transaction = database.transaction("recordings", "readonly");
+        const request = transaction.objectStore("recordings").getAll();
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error || new Error("Could not read saved recordings"));
+        transaction.oncomplete = () => database.close();
+      });
+      if (!records.length) return;
+      initializeAudio();
+      for (const record of records) {
+        let track = state.arrangementTracks.find((item) => item.id === record.trackId);
+        if (!track) {
+          track = {
+            id: record.trackId,
+            name: record.trackName,
+            color: record.color,
+            clips: [],
+            volume: record.volume,
+            muted: record.muted,
+            solo: false,
+            gainNode: null,
+          };
+          state.arrangementTracks.push(track);
+          ensureArrangementTrackAudio(track);
+        }
+        try {
+          const buffer = await state.audioContext.decodeAudioData(await record.blob.arrayBuffer());
+          track.clips.push({ id: record.id, name: record.name, startBar: record.startBar, buffer, blob: record.blob });
+        } catch {
+          showToast(`Could not restore ${record.name}.`);
+        }
+      }
+      state.arrangementTracks = state.arrangementTracks.filter((track) => track.clips.length > 0);
+      updateArrangementLength();
+      renderArrangement();
+      if (state.arrangementTracks.length) showToast("Your saved recordings are ready.");
+    } catch {
+      showToast("Saved recordings could not be restored.");
+    }
+  }
+
+  function updateTrackGains() {
+    if (!state.audioContext) return;
+    const allTracks = [...state.tracks, ...state.arrangementTracks];
+    const hasSolo = allTracks.some((track) => track.solo);
+    allTracks.forEach((track) => {
+      if (!track.gainNode) return;
+      const isSilent = track.muted || (hasSolo && !track.solo);
+      track.gainNode.gain.setTargetAtTime(isSilent ? 0 : track.volume, state.audioContext.currentTime, 0.015);
+    });
+  }
+
+  function triggerTrack(track, time, step) {
+    const context = state.audioContext;
+    const output = track.gainNode;
+    if (track.sample) {
+      const source = context.createBufferSource();
+      source.buffer = track.sample.buffer;
+      const envelope = context.createGain();
+      envelope.gain.setValueAtTime(1, time);
+      source.connect(envelope);
+      envelope.connect(output);
+      source.start(time);
+      return;
+    }
+    switch (track.kind) {
+      case "kick": playKick(context, output, time, step); break;
+      case "snare": playSnare(context, output, time); break;
+      case "clap": playClap(context, output, time); break;
+      case "hat": playHat(context, output, time, false); break;
+      case "openhat": playHat(context, output, time, true); break;
+      case "rim": playRim(context, output, time); break;
+      default: break;
+    }
+  }
+
+  function playKick(context, output, time, step) {
+    const osc = context.createOscillator();
+    const envelope = context.createGain();
+    const pitch = step % 8 === 0 ? 148 : 125;
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(pitch, time);
+    osc.frequency.exponentialRampToValueAtTime(43, time + 0.13);
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(1, time + 0.004);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.36);
+    osc.connect(envelope);
+    envelope.connect(output);
+    osc.start(time);
+    osc.stop(time + 0.38);
+  }
+
+  function playNoise(context, output, time, duration, cutoff, peak = 0.35, resonance = 0.7) {
+    const source = context.createBufferSource();
+    source.buffer = state.noiseBuffer;
+    const filter = context.createBiquadFilter();
+    filter.type = "highpass";
+    filter.frequency.setValueAtTime(cutoff, time);
+    filter.Q.value = resonance;
+    const envelope = context.createGain();
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(peak, time + 0.003);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    source.connect(filter);
+    filter.connect(envelope);
+    envelope.connect(output);
+    source.start(time);
+    source.stop(time + duration + 0.015);
+  }
+
+  function playSnare(context, output, time) {
+    playNoise(context, output, time, 0.17, 1500, 0.36);
+    const body = context.createOscillator();
+    const envelope = context.createGain();
+    body.type = "triangle";
+    body.frequency.setValueAtTime(185, time);
+    envelope.gain.setValueAtTime(0.2, time);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.1);
+    body.connect(envelope);
+    envelope.connect(output);
+    body.start(time);
+    body.stop(time + 0.12);
+  }
+
+  function playClap(context, output, time) {
+    [0, 0.018, 0.038].forEach((offset, index) => {
+      playNoise(context, output, time + offset, index === 2 ? 0.17 : 0.045, 1100, index === 2 ? 0.28 : 0.2);
+    });
+  }
+
+  function playHat(context, output, time, open) {
+    playNoise(context, output, time, open ? 0.34 : 0.055, 6500, open ? 0.2 : 0.16, 0.55);
+  }
+
+  function playRim(context, output, time) {
+    const osc = context.createOscillator();
+    const envelope = context.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(880, time);
+    osc.frequency.exponentialRampToValueAtTime(420, time + 0.045);
+    envelope.gain.setValueAtTime(0.32, time);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.075);
+    osc.connect(envelope);
+    envelope.connect(output);
+    osc.start(time);
+    osc.stop(time + 0.09);
+  }
+
+  function triggerClick(time, downbeat) {
+    const osc = state.audioContext.createOscillator();
+    const gain = state.audioContext.createGain();
+    osc.frequency.setValueAtTime(downbeat ? 1350 : 950, time);
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.22, time + 0.002);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.028);
+    osc.connect(gain);
+    gain.connect(state.masterGain);
+    osc.start(time);
+    osc.stop(time + 0.035);
+  }
+
+  async function startPlayback() {
+    if (state.isPlaying) return;
+    try {
+      await ensureAudio();
+      state.isPlaying = true;
+      const startBar = state.view === "arrangement" ? Math.min(state.arrangementCursor, state.arrangementBars - 1) : 0;
+      state.playbackStartBar = startBar;
+      state.playbackStartTime = state.audioContext.currentTime + 0.04;
+      state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - startBar) * (240 / state.bpm);
+      state.stepIndex = state.view === "arrangement" ? Math.floor(startBar * 16) % state.steps : 0;
+      state.nextStepTime = state.playbackStartTime;
+      updateTrackGains();
+      if (state.view === "arrangement") scheduleArrangementClips(state.playbackStartTime, startBar);
+      scheduler();
+      state.schedulerId = window.setInterval(scheduler, 25);
+      playButton.classList.add("is-playing");
+      playButton.setAttribute("aria-label", "Pause");
+      $("#now-playing").classList.add("is-live");
+      $("#now-playing").innerHTML = '<span class="live-dot"></span>PLAYING';
+    } catch (error) {
+      showToast(error.message || "Audio could not start in this browser.");
+    }
+  }
+
+  function scheduleArrangementClips(startTime, startBar) {
+    const secondsPerBar = 240 / state.bpm;
+    state.arrangementTracks.forEach((track) => {
+      ensureArrangementTrackAudio(track);
+      track.clips.forEach((clip) => {
+        const offset = Math.max(0, (startBar - clip.startBar) * secondsPerBar);
+        if (offset >= clip.buffer.duration) return;
+        const when = startTime + Math.max(0, clip.startBar - startBar) * secondsPerBar;
+        const source = state.audioContext.createBufferSource();
+        source.buffer = clip.buffer;
+        source.connect(track.gainNode);
+        source.onended = () => state.arrangementSources.delete(source);
+        source.start(when, offset);
+        state.arrangementSources.add(source);
+      });
+    });
+  }
+
+  function stopPlayback() {
+    if (state.schedulerId !== null) window.clearInterval(state.schedulerId);
+    state.schedulerId = null;
+    state.isPlaying = false;
+    state.stepIndex = 0;
+    state.stepTimers.forEach((timerId) => window.clearTimeout(timerId));
+    state.stepTimers.clear();
+    state.arrangementSources.forEach((source) => {
+      try { source.stop(); } catch { /* The source may have ended between scheduler ticks. */ }
+    });
+    state.arrangementSources.clear();
+    if (state.view === "arrangement") state.arrangementCursor = 0;
+    if (state.audioContext) {
+      const now = state.audioContext.currentTime;
+      state.tracks.forEach((track) => {
+        if (track.gainNode) {
+          track.gainNode.gain.cancelScheduledValues(now);
+          track.gainNode.gain.setTargetAtTime(track.muted || (state.tracks.some((item) => item.solo) && !track.solo) ? 0 : track.volume, now, 0.01);
+        }
+      });
+    }
+    playButton.classList.remove("is-playing");
+    playButton.setAttribute("aria-label", "Play");
+    $("#now-playing").classList.remove("is-live");
+    $("#now-playing").innerHTML = '<span class="live-dot"></span>READY TO PLAY';
+    setPlayhead(-1);
+    updateArrangementCursorMarker();
+  }
+
+  async function loadSample(file) {
+    const track = state.tracks.find((item) => item.id === state.sampleTrackId);
+    if (!track || !file) return;
+    if (!isAudioFile(file)) {
+      showToast("Choose an audio file such as WAV, MP3, or OGG.");
+      return;
+    }
+    try {
+      await ensureAudio();
+      const bytes = await file.arrayBuffer();
+      const buffer = await state.audioContext.decodeAudioData(bytes);
+      track.sample = { name: file.name, buffer };
+      renderTracks();
+      saveState();
+      showToast(`${file.name} loaded on ${track.name}`);
+    } catch (error) {
+      showToast(`Could not load that audio file: ${error.message || "unsupported format"}`);
+    } finally {
+      sampleInput.value = "";
+      state.sampleTrackId = null;
+    }
+  }
+
+  function showToast(message) {
+    toast.textContent = message;
+    toast.classList.add("is-visible");
+    window.clearTimeout(state.toastTimer);
+    state.toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2600);
+  }
+
+  function saveState() {
+    const saveDot = $(".save-dot");
+    $("#save-state").textContent = "Saving…";
+    saveDot.style.background = "#c8a95a";
+    const snapshot = {
+      bpm: state.bpm,
+      swing: state.swing,
+      steps: state.steps,
+      selectedPreset: state.selectedPreset,
+      tracks: state.tracks.map(({ id, cells, volume, muted, solo }) => ({ id, cells, volume, muted, solo })),
+      arrangementBars: state.arrangementBars,
+      arrangementCursor: state.arrangementCursor,
+      view: state.view,
+    };
+    window.clearTimeout(saveState.timeout);
+    saveState.timeout = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+        $("#save-state").textContent = "All changes saved";
+        saveDot.style.background = "#7f9d43";
+      } catch {
+        $("#save-state").textContent = "Session-only changes";
+        saveDot.style.background = "#d3a34b";
+      }
+    }, 250);
+  }
+
+  function restoreState() {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
+      if (!saved || typeof saved !== "object") return;
+      if (Number.isFinite(saved.bpm)) state.bpm = Math.max(60, Math.min(180, Math.round(saved.bpm)));
+      if (Number.isFinite(saved.swing)) state.swing = Math.max(0, Math.min(45, Math.round(saved.swing)));
+      if (saved.steps === 16 || saved.steps === 32) state.steps = saved.steps;
+      if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(8, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
+      if (Number.isFinite(saved.arrangementCursor)) state.arrangementCursor = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, saved.arrangementCursor));
+      if (saved.view === "sequencer" || saved.view === "arrangement") state.view = saved.view;
+      if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
+      if (Array.isArray(saved.tracks)) {
+        saved.tracks.forEach((savedTrack) => {
+          const track = state.tracks.find((item) => item.id === savedTrack.id);
+          if (!track) return;
+          if (Array.isArray(savedTrack.cells)) {
+            track.cells = Array.from({ length: STEP_COUNT }, (_, index) => savedTrack.cells[index] === true);
+          }
+          if (Number.isFinite(savedTrack.volume)) track.volume = Math.max(0, Math.min(1, savedTrack.volume));
+          track.muted = savedTrack.muted === true;
+          track.solo = savedTrack.solo === true;
         });
       }
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "A saved upload couldn't be loaded.");
-      break;
+    } catch {
+      try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be disabled. */ }
     }
   }
-  render();
-}
 
-renderStories();
-setTheme(currentTheme);
-if (authProvider instanceof DemoAuthProvider) {
-  renderDemoAccountButtons();
-} else {
-  document.querySelector(".demo-access").hidden = true;
-  document.querySelector(".auth-footnote").textContent =
-    "Sign-up requires a verified Oberlin inbox. Passwords and sessions are handled by your configured authentication service.";
-}
-
-async function initializeAuth() {
-  try {
-    if (authProvider instanceof DemoAuthProvider) await authProvider.seed();
-    const user = await authProvider.current();
-    if (user) await enterApp(user);
-    else setAuthMode("login");
-  } catch (error) {
-    showAuthError(loginForm, error instanceof Error ? error.message : "Could not initialize account access.");
+  function exportPattern() {
+    const pattern = {
+      app: "Pulsegrid",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      tempo: state.bpm,
+      swing: state.swing,
+      bars: state.steps / 16,
+      steps: state.steps,
+      tracks: state.tracks.map((track) => ({
+        name: track.name,
+        sample: track.sample?.name || null,
+        steps: track.cells.slice(0, state.steps).map((active) => active ? 1 : 0),
+      })),
+    };
+    const blob = new Blob([JSON.stringify(pattern, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "pulsegrid-pattern.json";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast("Pattern exported as JSON");
   }
-}
 
-initializeAuth();
+  function randomize() {
+    const kick = state.tracks.find((track) => track.id === "kick");
+    const snare = state.tracks.find((track) => track.id === "snare");
+    const clap = state.tracks.find((track) => track.id === "clap");
+    const hat = state.tracks.find((track) => track.id === "closed-hat");
+    const openHat = state.tracks.find((track) => track.id === "open-hat");
+    const rim = state.tracks.find((track) => track.id === "rim");
+    state.tracks.forEach((track) => track.cells.fill(false));
+    for (let step = 0; step < state.steps; step += 1) {
+      if (step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) kick.cells[step] = true;
+      if (step % 8 === 4 && Math.random() > 0.16) snare.cells[step] = true;
+      if (step % 2 === 1 && Math.random() > 0.28) hat.cells[step] = true;
+      if (step % 8 === 6 && Math.random() > 0.42) openHat.cells[step] = true;
+      if (step % 4 === 3 && Math.random() > 0.48) rim.cells[step] = true;
+      if (step % 8 === 4 && Math.random() > 0.6) clap.cells[step] = true;
+    }
+    state.selectedPreset = null;
+    renderTracks();
+    renderPresets();
+    saveState();
+    showToast("A new groove, just for you");
+  }
+
+  function clearPattern() {
+    state.tracks.forEach((track) => track.cells.fill(false));
+    state.selectedPreset = null;
+    renderTracks();
+    renderPresets();
+    saveState();
+    showToast("Pattern cleared");
+  }
+
+  function toggleMetronome() {
+    state.metronome = !state.metronome;
+    const button = $("#metronome-button");
+    button.classList.toggle("is-active", state.metronome);
+    button.setAttribute("aria-pressed", String(state.metronome));
+    showToast(state.metronome ? "Metronome on" : "Metronome off");
+  }
+
+  function bindEvents() {
+    playButton.addEventListener("click", () => state.isPlaying ? stopPlayback() : startPlayback());
+    $("#stop-button").addEventListener("click", stopPlayback);
+    $("#tempo-control").addEventListener("click", () => {
+      const entry = window.prompt("Set tempo (60–180 BPM)", String(state.bpm));
+      if (entry === null || !entry.trim()) return;
+      const value = Number(entry);
+      if (!Number.isFinite(value) || value < 60 || value > 180) {
+        showToast("Tempo must be between 60 and 180 BPM.");
+        return;
+      }
+      const resumeBar = state.arrangementCursor;
+      if (state.isPlaying && state.view === "arrangement") stopPlayback();
+      state.bpm = Math.round(value);
+      tempoValue.textContent = String(state.bpm);
+      updateArrangementLength();
+      if (state.view === "arrangement") renderArrangement();
+      if (resumeBar > 0) setArrangementCursor(resumeBar);
+      saveState();
+    });
+    swingSlider.addEventListener("input", () => {
+      state.swing = Number(swingSlider.value);
+      $("#swing-value").textContent = `${state.swing}%`;
+      swingSlider.style.setProperty("--range-progress", `${state.swing / 45 * 100}%`);
+      saveState();
+    });
+    document.querySelectorAll(".length-button").forEach((button) => {
+      button.addEventListener("click", () => setLength(Number(button.dataset.steps)));
+    });
+    $("#clear-button").addEventListener("click", clearPattern);
+    $("#randomize-button").addEventListener("click", randomize);
+    $("#export-button").addEventListener("click", exportPattern);
+    $("#metronome-button").addEventListener("click", toggleMetronome);
+    $("#help-button").addEventListener("click", () => $("#help-dialog").showModal());
+    $("#sequencer-tab").addEventListener("click", () => setWorkspaceView("sequencer"));
+    $("#arrangement-tab").addEventListener("click", () => setWorkspaceView("arrangement"));
+    $("#import-recording-button").addEventListener("click", () => requestRecordingImport());
+    $("#empty-import-button").addEventListener("click", () => requestRecordingImport());
+    $("#recording-input").addEventListener("change", async (event) => {
+      const files = Array.from(event.target.files || []);
+      for (const file of files) await importRecording(file, state.pendingImportTrackId);
+      state.pendingImportTrackId = null;
+      event.target.value = "";
+    });
+    $("#add-track-button").addEventListener("click", () => {
+      const track = createArrangementTrack();
+      renderArrangement();
+      requestRecordingImport(track.id);
+    });
+    $("#add-bars-button").addEventListener("click", () => {
+      if (state.arrangementBars >= MAX_ARRANGEMENT_BARS) {
+        showToast(`Arrangements are limited to ${MAX_ARRANGEMENT_BARS} bars.`);
+        return;
+      }
+      state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, state.arrangementBars + 4);
+      updateArrangementLength();
+      renderArrangement();
+      saveState();
+    });
+    $("#arrangement-clear-button").addEventListener("click", () => {
+      if (!state.arrangementTracks.length) return;
+      if (!window.confirm("Remove all imported recordings from this arrangement?")) return;
+      state.arrangementTracks.forEach((track) => track.clips.forEach((clip) => deletePersistedClip(clip.id)));
+      state.arrangementTracks = [];
+      state.arrangementBars = 8;
+      state.arrangementCursor = 0;
+      renderArrangement();
+      saveState();
+      showToast("Arrangement cleared");
+    });
+    $("#reset-session").addEventListener("click", () => {
+      if (!window.confirm("Reset this session to the starter pattern?")) return;
+      stopPlayback();
+      state.tracks = makeTracks();
+      state.bpm = 124;
+      state.swing = 0;
+      state.steps = 16;
+      state.selectedPreset = "warehouse";
+      tempoValue.textContent = "124";
+      swingSlider.value = "0";
+      $("#swing-value").textContent = "0%";
+      swingSlider.style.setProperty("--range-progress", "0%");
+      setLength(16);
+      loadPreset(PRESETS[0]);
+    });
+    $("#project-name").addEventListener("click", () => {
+      const title = window.prompt("Name this session", $("#project-name").firstChild.textContent.trim());
+      if (title?.trim()) {
+        $("#project-name").firstChild.textContent = title.trim();
+        try { window.localStorage.setItem(`${STORAGE_KEY}-name`, title.trim()); } catch { /* Storage may be disabled. */ }
+      }
+    });
+    sampleInput.addEventListener("change", () => loadSample(sampleInput.files?.[0]));
+    document.addEventListener("keydown", (event) => {
+      const target = event.target;
+      const isTyping = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+      if (event.code === "Space" && !isTyping && !$("#help-dialog").open) {
+        event.preventDefault();
+        state.isPlaying ? stopPlayback() : startPlayback();
+      }
+      if (event.key === "Escape" && $("#help-dialog").open) $("#help-dialog").close();
+    });
+  }
+
+  function initialize() {
+    state.tracks = makeTracks();
+    restoreState();
+    tempoValue.textContent = String(state.bpm);
+    swingSlider.value = String(state.swing);
+    $("#swing-value").textContent = `${state.swing}%`;
+    swingSlider.style.setProperty("--range-progress", `${state.swing / 45 * 100}%`);
+    try {
+      const savedName = window.localStorage.getItem(`${STORAGE_KEY}-name`);
+      if (savedName) $("#project-name").firstChild.textContent = savedName;
+    } catch { /* Storage may be disabled. */ }
+    renderHeader();
+    renderPresets();
+    setLength(state.steps);
+    renderTracks();
+    renderArrangement();
+    state.arrangementCursor = Math.min(state.arrangementCursor, state.arrangementBars - 1);
+    setWorkspaceView(state.view, true);
+    bindEvents();
+  }
+
+  initialize();
+  restoreArrangement();
+})();
