@@ -198,8 +198,7 @@
   }
 
   function renderPatternInstrumentOptions() {
-    const included = new Set(getPatternTrackIds(getPattern()));
-    const available = state.tracks.filter((track) => !included.has(track.id));
+    const available = state.tracks.filter((track) => !track.sourceId);
     [
       ["#sequencer-instrument-select", "#add-sequencer-instrument-button"],
       ["#pattern-instrument-select", "#add-pattern-instrument-button"],
@@ -209,7 +208,7 @@
       select.replaceChildren();
       const placeholder = document.createElement("option");
       placeholder.value = "";
-      placeholder.textContent = available.length ? "Add instrument…" : "All instruments added";
+      placeholder.textContent = available.length ? "Choose instrument…" : "No instruments available";
       placeholder.disabled = true;
       placeholder.selected = true;
       select.append(placeholder);
@@ -225,15 +224,20 @@
 
   function addPatternInstrument(trackId) {
     const pattern = getPattern();
-    const track = state.tracks.find((item) => item.id === trackId);
-    if (!pattern || !track) return;
-    const trackIds = getPatternTrackIds(pattern);
-    if (trackIds.includes(trackId)) return;
+    const source = state.tracks.find((item) => item.id === trackId && !item.sourceId);
+    if (!pattern || !source) return;
     captureCurrentPattern();
-    pattern.trackIds.push(trackId);
-    pattern.cells[trackId] = Array(STEP_COUNT).fill(false);
-    if (SOUND_VARIANTS[track.kind]) pattern.variants[trackId] = track.variant || "classic";
-    track.cells = Array(STEP_COUNT).fill(false);
+    const layerCount = getPatternTrackIds(pattern).filter((id) => {
+      const layer = state.tracks.find((item) => item.id === id);
+      return layer && (layer.id === source.id || layer.sourceId === source.id);
+    }).length;
+    const track = makePatternInstrumentLayer(source, {
+      name: layerCount ? `${source.name} ${layerCount + 1}` : source.name,
+    });
+    state.tracks.push(track);
+    pattern.trackIds.push(track.id);
+    pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
+    if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
     renderTracks();
     renderPatternSelectors();
     saveState();
@@ -248,6 +252,15 @@
     delete pattern.cells[track.id];
     delete pattern.variants[track.id];
     track.cells = Array(STEP_COUNT).fill(false);
+    track.solo = false;
+    if (track.sourceId && !state.patterns.some((item) => item.id !== pattern.id && getPatternTrackIds(item).includes(track.id))) {
+      track.gainNode?.disconnect();
+      state.tracks = state.tracks.filter((item) => item !== track);
+      if (track.kind === "sample" || track.sample) {
+        deletePersistedDrumSample(track.id).catch(() => showToast("Layer removed, but its saved sample could not be deleted."));
+      }
+    }
+    updateTrackGains();
     renderTracks();
     renderPatternSelectors();
     saveState();
@@ -344,7 +357,7 @@
         makeTrackButton("sample", track.sample ? "Replace loaded sample" : "Load an audio sample", track),
         makeTrackButton("remove-from-pattern", "Remove instrument from this pattern", track),
       );
-      if (track.kind === "sample") controls.append(makeTrackButton("remove", "Remove imported drum sound", track));
+      if (track.kind === "sample" && !track.sourceId) controls.append(makeTrackButton("remove", "Remove imported drum sound", track));
       const volume = document.createElement("input");
       volume.className = "track-volume";
       volume.type = "range";
@@ -473,7 +486,7 @@
     state.tracks.forEach((track) => {
       track.cells.fill(false);
       if (includedTrackIds.has(track.id)) {
-        (preset.hits[track.id] || []).forEach((step) => { track.cells[step] = true; });
+        (preset.hits[track.sourceId || track.id] || []).forEach((step) => { track.cells[step] = true; });
       }
     });
     renderTracks();
@@ -644,6 +657,24 @@
     return track;
   }
 
+  function makePatternInstrumentLayer(source, options = {}) {
+    const layer = {
+      ...source,
+      id: options.id || makeId(),
+      sourceId: source.sourceId || source.id,
+      name: options.name || source.name,
+      cells: Array.from({ length: STEP_COUNT }, (_, index) => options.cells?.[index] === true),
+      volume: Number.isFinite(options.volume) ? Math.max(0, Math.min(1, options.volume)) : source.volume,
+      muted: options.muted === true,
+      solo: options.solo === true,
+      variant: options.variant ?? source.variant,
+      sample: source.sample ? { ...source.sample } : null,
+      gainNode: null,
+    };
+    ensureSequencerTrackAudio(layer);
+    return layer;
+  }
+
   async function importDrumSamples(files) {
     if (!files.length) return;
     const imported = [];
@@ -695,19 +726,25 @@
 
   function removeImportedDrumTrack(track) {
     if (state.isPlaying) stopPlayback();
-    track.gainNode?.disconnect();
-    state.tracks = state.tracks.filter((item) => item !== track);
+    const removedTracks = track.sourceId
+      ? [track]
+      : state.tracks.filter((item) => item === track || item.sourceId === track.id);
+    const removedIds = new Set(removedTracks.map((item) => item.id));
+    removedTracks.forEach((item) => item.gainNode?.disconnect());
+    state.tracks = state.tracks.filter((item) => !removedIds.has(item.id));
     state.patterns.forEach((pattern) => {
-      pattern.trackIds = getPatternTrackIds(pattern).filter((id) => id !== track.id);
-      delete pattern.cells[track.id];
-      delete pattern.variants[track.id];
+      pattern.trackIds = getPatternTrackIds(pattern).filter((id) => !removedIds.has(id));
+      removedIds.forEach((id) => {
+        delete pattern.cells[id];
+        delete pattern.variants[id];
+      });
     });
     renderTracks();
     if (state.view === "arrangement") renderArrangement();
     updateTrackGains();
     saveState();
-    deletePersistedDrumSample(track.id).catch(() => {
-      showToast("Track removed, but its saved sample could not be deleted.");
+    removedTracks.filter((item) => item.kind === "sample" || item.sample).forEach((item) => {
+      deletePersistedDrumSample(item.id).catch(() => showToast("Track removed, but its saved sample could not be deleted."));
     });
     showToast(`${track.name} removed`);
   }
@@ -865,8 +902,9 @@
   function renderInstrumentBrowser() {
     const browser = $("#instrument-browser");
     browser.replaceChildren();
-    $("#drum-sound-count").textContent = String(state.tracks.length);
-    state.tracks.forEach((track) => {
+    const instruments = state.tracks.filter((track) => !track.sourceId);
+    $("#drum-sound-count").textContent = String(instruments.length);
+    instruments.forEach((track) => {
       const row = document.createElement("div");
       row.className = "instrument-source";
       const color = document.createElement("span");
@@ -1388,6 +1426,12 @@
           showToast(`Could not restore ${record.fileName || record.trackName || "a drum sample"}.`);
         }
       }
+      const sampleRecordIds = new Set(sampleRecords.map((record) => record.trackId));
+      state.tracks.filter((track) => track.sourceId && !sampleRecordIds.has(track.id)).forEach((layer) => {
+        const source = state.tracks.find((track) => track.id === layer.sourceId);
+        layer.sample = source?.sample ? { ...source.sample } : null;
+        ensureSequencerTrackAudio(layer);
+      });
 
       const clipRecords = records.filter((record) => record.recordType !== "drum-sample");
       for (const record of clipRecords) {
@@ -1647,7 +1691,14 @@
       await ensureAudio();
       const bytes = await file.arrayBuffer();
       const buffer = await state.audioContext.decodeAudioData(bytes);
+      const previousBuffer = track.sample?.buffer;
       track.sample = { name: file.name, buffer };
+      if (!track.sourceId) {
+        state.tracks.filter((item) => item.sourceId === track.id && item.sample?.buffer === previousBuffer).forEach((layer) => {
+          layer.sample = { ...track.sample };
+          ensureSequencerTrackAudio(layer);
+        });
+      }
       sampleLoaded = true;
       renderTracks();
       saveState();
@@ -1690,6 +1741,7 @@
       })),
       tracks: state.tracks.map((track) => ({
         id: track.id,
+        sourceId: track.sourceId || null,
         name: track.name,
         kind: track.kind,
         color: track.color,
@@ -1733,7 +1785,22 @@
       if (Array.isArray(saved.tracks)) {
         saved.tracks.forEach((savedTrack) => {
           let track = state.tracks.find((item) => item.id === savedTrack.id);
-          if (!track && savedTrack.kind === "sample" && typeof savedTrack.id === "string" && typeof savedTrack.name === "string") {
+          if (!track && typeof savedTrack.sourceId === "string") {
+            const source = state.tracks.find((item) => item.id === savedTrack.sourceId);
+            if (source) {
+              track = makePatternInstrumentLayer(source, {
+                id: savedTrack.id,
+                name: savedTrack.name,
+                cells: savedTrack.cells,
+                volume: savedTrack.volume,
+                muted: savedTrack.muted,
+                solo: savedTrack.solo,
+                variant: savedTrack.variant,
+              });
+              state.tracks.push(track);
+            }
+          }
+          if (!track && !savedTrack.sourceId && savedTrack.kind === "sample" && typeof savedTrack.id === "string" && typeof savedTrack.name === "string") {
             track = makeDrumSampleTrack({
               id: savedTrack.id,
               name: savedTrack.name,
@@ -1968,21 +2035,19 @@
   }
 
   function randomize() {
-    const kick = state.tracks.find((track) => track.id === "kick");
-    const snare = state.tracks.find((track) => track.id === "snare");
-    const clap = state.tracks.find((track) => track.id === "clap");
-    const hat = state.tracks.find((track) => track.id === "closed-hat");
-    const openHat = state.tracks.find((track) => track.id === "open-hat");
-    const rim = state.tracks.find((track) => track.id === "rim");
     const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
+    const activeTracks = state.tracks.filter((track) => includedTrackIds.has(track.id));
     state.tracks.forEach((track) => track.cells.fill(false));
     for (let step = 0; step < state.steps; step += 1) {
-      if (kick && includedTrackIds.has(kick.id) && step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) kick.cells[step] = true;
-      if (snare && includedTrackIds.has(snare.id) && step % 8 === 4 && Math.random() > 0.16) snare.cells[step] = true;
-      if (hat && includedTrackIds.has(hat.id) && step % 2 === 1 && Math.random() > 0.28) hat.cells[step] = true;
-      if (openHat && includedTrackIds.has(openHat.id) && step % 8 === 6 && Math.random() > 0.42) openHat.cells[step] = true;
-      if (rim && includedTrackIds.has(rim.id) && step % 4 === 3 && Math.random() > 0.48) rim.cells[step] = true;
-      if (clap && includedTrackIds.has(clap.id) && step % 8 === 4 && Math.random() > 0.6) clap.cells[step] = true;
+      activeTracks.forEach((track) => {
+        const sourceId = track.sourceId || track.id;
+        if (sourceId === "kick" && step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) track.cells[step] = true;
+        if (sourceId === "snare" && step % 8 === 4 && Math.random() > 0.16) track.cells[step] = true;
+        if (sourceId === "closed-hat" && step % 2 === 1 && Math.random() > 0.28) track.cells[step] = true;
+        if (sourceId === "open-hat" && step % 8 === 6 && Math.random() > 0.42) track.cells[step] = true;
+        if (sourceId === "rim" && step % 4 === 3 && Math.random() > 0.48) track.cells[step] = true;
+        if (sourceId === "clap" && step % 8 === 4 && Math.random() > 0.6) track.cells[step] = true;
+      });
     }
     state.selectedPreset = null;
     renderTracks();
