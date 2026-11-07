@@ -139,6 +139,14 @@
             </div>
             <div class="arrangement-actions">
               <button class="quiet-button" id="add-bars-button" type="button">+ 4 bars</button>
+              <button class="quiet-button record-audio-button" id="record-audio-button" type="button" aria-pressed="false">
+                <span class="record-dot"></span>
+                <span id="record-button-label">Record input</span>
+              </button>
+              <button class="export-button" id="export-song-button" type="button">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 13v3h12v-3" /></svg>
+                Export song
+              </button>
               <button class="export-button import-recording-button" id="import-recording-button" type="button">
                 <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3m0 0L6.5 6.5M10 3l3.5 3.5M4 12v4h12v-4" /></svg>
                 Add recordings
@@ -147,25 +155,43 @@
           </div>
 
           <div class="arrangement-card" id="arrangement-card">
-            <div class="arrangement-empty" id="arrangement-empty">
-              <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-              <h2>Start with a recording</h2>
-              <p>Bring in vocals, loops, or any audio file. Each recording gets its own track.</p>
-              <button class="quiet-button" id="empty-import-button" type="button">＋ Add audio files</button>
-            </div>
-            <div class="arrangement-editor" id="arrangement-editor" hidden>
-              <div class="arrangement-track-column">
-                <div class="arrangement-track-header">TRACKS <span id="arrangement-track-count">01</span></div>
-                <div class="arrangement-track-labels" id="arrangement-track-labels"></div>
-                <button class="add-track-button" id="add-track-button" type="button">＋ Add track</button>
-              </div>
-              <div class="timeline-scroll" id="timeline-scroll">
-                <div class="timeline-content" id="timeline-content"></div>
+            <div class="arrangement-layout">
+              <aside class="source-sidebar" aria-label="Instrument and audio sources">
+                <div class="source-sidebar-heading">SOURCES <span>DRAG TO ARRANGE</span></div>
+                <div class="source-section-label">PATTERNS</div>
+                <button class="pattern-source" id="pattern-source" type="button" draggable="true">
+                  <span class="pattern-source-icon"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg></span>
+                  <span><strong>Drum repeater</strong><small>Current step pattern</small></span>
+                  <span class="source-grip" aria-hidden="true">⠿</span>
+                </div>
+                <div class="source-section-label instrument-section-label">DRUM SOUNDS</div>
+                <div class="instrument-browser" id="instrument-browser"></div>
+                <div class="source-section-label recordings-section-label">RECORDINGS <span id="recording-source-count">0</span></div>
+                <div class="recording-browser" id="recording-browser"></div>
+                <button class="source-add-button" id="side-add-recording" type="button">＋ Import audio</button>
+              </aside>
+              <div class="arrangement-main">
+                <div class="arrangement-empty" id="arrangement-empty">
+                  <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+                  <h2>Start arranging your song</h2>
+                  <p>Drag the drum repeater into the timeline, or import recordings and place them on their own tracks.</p>
+                  <button class="quiet-button" id="empty-import-button" type="button">＋ Add audio files</button>
+                </div>
+                <div class="arrangement-editor" id="arrangement-editor" hidden>
+                  <div class="arrangement-track-column">
+                    <div class="arrangement-track-header">TRACKS <span id="arrangement-track-count">01</span></div>
+                    <div class="arrangement-track-labels" id="arrangement-track-labels"></div>
+                    <button class="add-track-button" id="add-track-button" type="button">＋ Add audio track</button>
+                  </div>
+                  <div class="timeline-scroll" id="timeline-scroll">
+                    <div class="timeline-content" id="timeline-content"></div>
+                  </div>
+                </div>
               </div>
             </div>
             <div class="arrangement-footer">
-              <span><span class="legend-swatch"></span>DRUM LOOP <span class="audio-legend"></span>AUDIO CLIP</span>
-              <span><kbd>DRAG</kbd> move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
+              <span><span class="legend-swatch"></span>DRUM PATTERN <span class="audio-legend"></span>AUDIO CLIP</span>
+              <span><kbd>DRAG</kbd> add / move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
             </div>
           </div>
 
@@ -186,7 +212,7 @@
           <p>Click squares to switch drum hits on or off. Press <kbd>Space</kbd> to play, then change the tempo or swing while it runs.</p>
           <p>Use the <strong>+</strong> button next to any drum to load an audio file. Imported samples play right in the sequence.</p>
           <p>Open <strong>Arrangement</strong> to add vocal takes or loops on separate tracks. Drag clips to line them up with your beat; playback combines all tracks at the project tempo.</p>
-          <p>Patterns and imported recordings are saved in this browser. Export downloads your drum pattern as a JSON file.</p>
+          <p>Patterns and imported recordings are saved in this browser. Export a full arrangement as WAV or download the drum pattern as JSON.</p>
         </form>
       </dialog>
     </div>

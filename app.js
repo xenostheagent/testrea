@@ -10,6 +10,39 @@
     { id: "rim", name: "Rim / perc", kind: "rim", color: "#93e2bd", subtitle: "Add a little syncopation", volume: 0.48, hits: [3, 11] },
   ];
 
+  const SOUND_VARIANTS = {
+    kick: [
+      { id: "classic", name: "909 Classic" },
+      { id: "deep", name: "808 Deep" },
+      { id: "punch", name: "Tight Punch" },
+    ],
+    snare: [
+      { id: "classic", name: "909 Snare" },
+      { id: "tight", name: "Tight Snap" },
+      { id: "noise", name: "Noise Burst" },
+    ],
+    clap: [
+      { id: "classic", name: "Wide Clap" },
+      { id: "tight", name: "Short Clap" },
+      { id: "layered", name: "Layered Clap" },
+    ],
+    hat: [
+      { id: "classic", name: "Bright Closed" },
+      { id: "soft", name: "Soft Closed" },
+      { id: "bright", name: "Sharp Closed" },
+    ],
+    openhat: [
+      { id: "classic", name: "Open Hat" },
+      { id: "shimmer", name: "Shimmer" },
+      { id: "dark", name: "Dark Open" },
+    ],
+    rim: [
+      { id: "classic", name: "Rim Click" },
+      { id: "low", name: "Low Tom" },
+      { id: "high", name: "High Tick" },
+    ],
+  };
+
   const PRESETS = [
     {
       id: "warehouse", title: "Warehouse", tag: "04 / FLOOR", description: "Driving, no-nonsense techno", color: "#d4f16c", bpm: 128,
@@ -31,11 +64,12 @@
   const STORAGE_KEY = "pulsegrid-session-v1";
   const STEP_COUNT = 32;
   const BAR_WIDTH = 116;
-  const MAX_ARRANGEMENT_BARS = 64;
+  const MAX_ARRANGEMENT_BARS = 256;
   const TRACK_COLORS = ["#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd"];
   const state = {
     tracks: [],
     arrangementTracks: [],
+    patternClips: [],
     steps: 16,
     view: "sequencer",
     bpm: 124,
@@ -48,6 +82,7 @@
     playbackEndTime: 0,
     selectedPreset: "warehouse",
     isPlaying: false,
+    isExporting: false,
     metronome: false,
     currentStep: -1,
     audioContext: null,
@@ -60,6 +95,10 @@
     toastTimer: null,
     sampleTrackId: null,
     pendingImportTrackId: null,
+    mediaRecorder: null,
+    recordingStream: null,
+    recordingChunks: [],
+    recordingStartBar: 0,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -76,7 +115,7 @@
     const tracks = TRACKS.map((definition) => {
       const cells = Array(STEP_COUNT).fill(false);
       definition.hits.forEach((step) => { cells[step] = true; });
-      return { ...definition, cells, muted: false, solo: false, sample: null, gainNode: null };
+      return { ...definition, cells, variant: "classic", muted: false, solo: false, sample: null, gainNode: null };
     });
     tracks.forEach(ensureSequencerTrackAudio);
     return tracks;
@@ -118,7 +157,7 @@
       subtitle.className = `track-subtitle${track.sample ? " has-sample" : ""}`;
       subtitle.title = track.sample?.name || track.subtitle;
       subtitle.textContent = track.sample?.name || track.subtitle;
-      info.append(name, subtitle);
+      info.append(name, subtitle, makeSoundSelect(track));
 
       const controls = document.createElement("div");
       controls.className = "track-controls";
@@ -167,6 +206,27 @@
       trackList.append(row);
     });
     $("#track-count").textContent = String(state.tracks.length).padStart(2, "0");
+    renderInstrumentBrowser();
+  }
+
+  function makeSoundSelect(track, compact = false) {
+    const select = document.createElement("select");
+    select.className = `sound-variant${compact ? " is-compact" : ""}`;
+    select.setAttribute("aria-label", `${track.name} sound`);
+    (SOUND_VARIANTS[track.kind] || SOUND_VARIANTS.kick).forEach((sound) => {
+      const option = document.createElement("option");
+      option.value = sound.id;
+      option.textContent = sound.name;
+      select.append(option);
+    });
+    select.value = track.variant || "classic";
+    select.addEventListener("change", () => {
+      track.variant = select.value;
+      saveState();
+      renderTracks();
+      if (state.view === "arrangement") renderArrangement();
+    });
+    return select;
   }
 
   function makeTrackButton(type, label, track) {
@@ -231,6 +291,7 @@
 
   function setLength(steps) {
     state.steps = steps;
+    state.patternClips.forEach((clip) => { clip.startBar = Math.min(clip.startBar, maxPatternStartBar()); });
     document.querySelectorAll(".length-button").forEach((button) => {
       const selected = Number(button.dataset.steps) === steps;
       button.classList.toggle("is-selected", selected);
@@ -239,6 +300,7 @@
     $("#bar-label").textContent = steps === 16 ? "1 BAR" : "2 BARS";
     renderHeader();
     renderTracks();
+    updateArrangementLength();
     if (state.view === "arrangement") renderArrangement();
     if (state.currentStep >= steps) state.currentStep = -1;
     saveState();
@@ -306,12 +368,21 @@
       state.nextStepTime < state.audioContext.currentTime + lookAhead &&
       (state.view !== "arrangement" || state.nextStepTime < state.playbackEndTime)
     ) {
-      const step = state.stepIndex;
-      const swingOffset = step % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
-      scheduleStep(step, state.nextStepTime + swingOffset);
+      const clockStep = state.stepIndex;
+      const step = state.view === "arrangement" ? arrangementStepAtTime(state.nextStepTime) : state.stepIndex;
+      const swingOffset = (step >= 0 ? step : clockStep) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
+      if (step >= 0) scheduleStep(step, state.nextStepTime + swingOffset);
+      else if (state.metronome && clockStep % 4 === 0) triggerClick(state.nextStepTime, clockStep % 16 === 0);
       state.nextStepTime += getStepDuration();
-      state.stepIndex = (step + 1) % state.steps;
+      state.stepIndex = (clockStep + 1) % state.steps;
     }
+  }
+
+  function arrangementStepAtTime(time) {
+    const barPosition = state.playbackStartBar + (time - state.playbackStartTime) / (240 / state.bpm);
+    const patternBars = state.steps / 16;
+    const clip = state.patternClips.find((item) => barPosition >= item.startBar && barPosition < item.startBar + patternBars);
+    return clip ? Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % state.steps : -1;
   }
 
   function setPlayhead(step) {
@@ -322,6 +393,10 @@
 
   function makeId() {
     return window.crypto?.randomUUID?.() || `clip-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function maxPatternStartBar() {
+    return Math.max(0, MAX_ARRANGEMENT_BARS - state.steps / 16);
   }
 
   function isAudioFile(file) {
@@ -362,7 +437,7 @@
     const secondsPerBar = 240 / state.bpm;
     const clipEnd = state.arrangementTracks.reduce((latest, track) => {
       return track.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.buffer.duration / secondsPerBar), latest);
-    }, 8);
+    }, state.patternClips.reduce((end, clip) => Math.max(end, clip.startBar + state.steps / 16), 8));
     state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, Math.max(state.arrangementBars, Math.ceil(clipEnd)));
     if (state.playbackStartTime && state.isPlaying && state.view === "arrangement") {
       state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - state.playbackStartBar) * secondsPerBar;
@@ -371,14 +446,13 @@
   }
 
   function renderArrangement() {
-    const empty = $("#arrangement-empty");
     const editor = $("#arrangement-editor");
-    const hasTracks = state.arrangementTracks.length > 0;
-    empty.hidden = hasTracks;
-    editor.hidden = !hasTracks;
-    $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length);
+    $("#arrangement-empty").hidden = true;
+    editor.hidden = false;
+    $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.patternClips.length);
     $("#arrangement-track-count").textContent = String(state.arrangementTracks.length + 1).padStart(2, "0");
-    if (!hasTracks) return;
+    renderInstrumentBrowser();
+    renderRecordingBrowser();
 
     const width = state.arrangementBars * BAR_WIDTH;
     const labels = $("#arrangement-track-labels");
@@ -405,18 +479,7 @@
     labels.append(drumLabel);
 
     const drumLane = createTimelineLane("drums", width);
-    const patternBars = state.steps / 16;
-    for (let bar = 0; bar < state.arrangementBars; bar += patternBars) {
-      const block = document.createElement("div");
-      block.className = "drum-arrangement-clip";
-      block.style.left = `${bar * BAR_WIDTH + 4}px`;
-      block.style.width = `${Math.max(28, patternBars * BAR_WIDTH - 8)}px`;
-      block.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg>';
-      const text = document.createElement("span");
-      text.textContent = `BEAT LOOP · ${patternBars} BAR${patternBars > 1 ? "S" : ""}`;
-      block.append(text);
-      drumLane.append(block);
-    }
+    state.patternClips.forEach((clip) => drumLane.append(createPatternClip(clip)));
     content.append(drumLane);
 
     state.arrangementTracks.forEach((track) => {
@@ -478,6 +541,85 @@
     updateArrangementCursorMarker();
   }
 
+  function renderInstrumentBrowser() {
+    const browser = $("#instrument-browser");
+    browser.replaceChildren();
+    state.tracks.forEach((track) => {
+      const row = document.createElement("div");
+      row.className = "instrument-source";
+      const color = document.createElement("span");
+      color.className = "source-color";
+      color.style.background = track.color;
+      const name = document.createElement("span");
+      name.className = "instrument-source-name";
+      name.textContent = track.name;
+      row.append(color, name, makeSoundSelect(track, true));
+      browser.append(row);
+    });
+  }
+
+  function renderRecordingBrowser() {
+    const browser = $("#recording-browser");
+    browser.replaceChildren();
+    $("#recording-source-count").textContent = String(state.arrangementTracks.length);
+    if (!state.arrangementTracks.length) {
+      const empty = document.createElement("div");
+      empty.className = "recording-source-empty";
+      empty.textContent = "No audio imported yet";
+      browser.append(empty);
+      return;
+    }
+    state.arrangementTracks.forEach((track) => {
+      const item = document.createElement("button");
+      item.className = "recording-source";
+      item.type = "button";
+      item.title = `Show ${track.name} on the timeline`;
+      const color = document.createElement("span");
+      color.className = "source-color";
+      color.style.background = track.color;
+      const name = document.createElement("span");
+      name.className = "recording-source-name";
+      name.textContent = track.name;
+      const count = document.createElement("span");
+      count.className = "recording-source-count";
+      count.textContent = String(track.clips.length);
+      item.append(color, name, count);
+      item.addEventListener("click", () => {
+        const clip = track.clips[0];
+        if (!clip) return;
+        setArrangementCursor(clip.startBar);
+        $("#timeline-scroll").scrollLeft = clip.startBar * BAR_WIDTH;
+      });
+      browser.append(item);
+    });
+  }
+
+  function addPatternClip(startBar = state.arrangementCursor) {
+    state.patternClips.push({ id: makeId(), startBar: Math.max(0, Math.min(maxPatternStartBar(), Math.floor(startBar))) });
+    state.patternClips.sort((left, right) => left.startBar - right.startBar);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+    showToast("Drum pattern added to the arrangement");
+  }
+
+  function movePatternClip(clipId, startBar) {
+    const clip = state.patternClips.find((item) => item.id === clipId);
+    if (!clip) return;
+    clip.startBar = Math.max(0, Math.min(maxPatternStartBar(), Math.floor(startBar)));
+    state.patternClips.sort((left, right) => left.startBar - right.startBar);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
+  function removePatternClip(clipId) {
+    state.patternClips = state.patternClips.filter((clip) => clip.id !== clipId);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
   function createTimelineLane(trackId, width) {
     const lane = document.createElement("div");
     lane.className = "timeline-lane";
@@ -492,7 +634,10 @@
     lane.addEventListener("dragover", (event) => {
       event.preventDefault();
       lane.classList.add("is-drop-target");
-      if (event.dataTransfer) event.dataTransfer.dropEffect = event.dataTransfer.files.length ? "copy" : "move";
+      if (event.dataTransfer) {
+        event.dataTransfer.dropEffect = event.dataTransfer.files.length ||
+          Array.from(event.dataTransfer.types).includes("application/x-pulsegrid-pattern-source") ? "copy" : "move";
+      }
     });
     lane.addEventListener("dragleave", (event) => {
       if (!lane.contains(event.relatedTarget)) lane.classList.remove("is-drop-target");
@@ -506,8 +651,24 @@
         for (const file of files) await importRecording(file, trackId === "drums" ? null : trackId, startBar);
         return;
       }
-      const transfer = event.dataTransfer?.getData("application/x-pulsegrid-clip");
-      if (!transfer || trackId === "drums") return;
+      if (trackId === "drums") {
+        const patternSource = event.dataTransfer?.getData("application/x-pulsegrid-pattern-source");
+        if (patternSource) {
+          addPatternClip(startBar);
+          return;
+        }
+        const patternTransfer = event.dataTransfer?.getData("application/x-pulsegrid-pattern-clip");
+        if (!patternTransfer) return;
+        try {
+          const { clipId } = JSON.parse(patternTransfer);
+          movePatternClip(clipId, startBar);
+        } catch {
+          showToast("That drum pattern could not be moved.");
+        }
+        return;
+      }
+      const transfer = event.dataTransfer?.getData("application/x-pulsegrid-audio-clip");
+      if (!transfer) return;
       try {
         const { clipId, sourceTrackId } = JSON.parse(transfer);
         moveArrangementClip(clipId, sourceTrackId, trackId, startBar);
@@ -564,7 +725,7 @@
       removeArrangementClip(track.id, clip.id);
     });
     element.addEventListener("dragstart", (event) => {
-      event.dataTransfer?.setData("application/x-pulsegrid-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
+      event.dataTransfer?.setData("application/x-pulsegrid-audio-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
     });
     element.addEventListener("click", (event) => {
@@ -572,6 +733,40 @@
       setArrangementCursor(clip.startBar);
     });
     element.append(waveform, name, remove);
+    return element;
+  }
+
+  function createPatternClip(clip) {
+    const element = document.createElement("div");
+    element.className = "drum-arrangement-clip";
+    element.draggable = true;
+    element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
+    element.style.width = `${Math.max(28, state.steps / 16 * BAR_WIDTH - 8)}px`;
+    element.setAttribute("aria-label", `Drum pattern, bar ${clip.startBar + 1}; drag to move`);
+    const icon = document.createElement("span");
+    icon.className = "pattern-clip-icon";
+    icon.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 11h3l2-6 4 10 2-6h3" /></svg>';
+    const text = document.createElement("span");
+    text.className = "pattern-clip-name";
+    text.textContent = `DRUM PATTERN · ${state.steps / 16} BAR${state.steps > 16 ? "S" : ""}`;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "pattern-clip-remove";
+    remove.title = "Remove pattern clip";
+    remove.setAttribute("aria-label", "Remove drum pattern clip");
+    remove.textContent = "×";
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removePatternClip(clip.id);
+    });
+    element.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("application/x-pulsegrid-pattern-clip", JSON.stringify({ clipId: clip.id }));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    });
+    element.addEventListener("click", (event) => {
+      if (!event.target.closest(".pattern-clip-remove")) setArrangementCursor(clip.startBar);
+    });
+    element.append(icon, text, remove);
     return element;
   }
 
@@ -633,6 +828,66 @@
       }
     } catch (error) {
       showToast(`Could not import ${file.name}: ${error.message || "unsupported audio format"}`);
+    }
+  }
+
+  async function toggleAudioRecording() {
+    if (state.mediaRecorder?.state === "recording") {
+      $("#record-audio-button").disabled = true;
+      $("#record-button-label").textContent = "Saving recording…";
+      state.mediaRecorder.stop();
+      return;
+    }
+    if (!window.navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      showToast("Microphone recording is not supported in this browser.");
+      return;
+    }
+    try {
+      const stream = await window.navigator.mediaDevices.getUserMedia({ audio: true });
+      state.recordingStream = stream;
+      state.recordingChunks = [];
+      state.recordingStartBar = state.arrangementCursor;
+      const mimeType = window.MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+      const recorder = new window.MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      state.mediaRecorder = recorder;
+      recorder.addEventListener("dataavailable", (event) => {
+        if (event.data.size) state.recordingChunks.push(event.data);
+      });
+      recorder.addEventListener("error", () => showToast("Microphone recording stopped because of an error."));
+      recorder.addEventListener("stop", async () => {
+        stream.getTracks().forEach((track) => track.stop());
+        state.recordingStream = null;
+        state.mediaRecorder = null;
+        const chunks = state.recordingChunks;
+        state.recordingChunks = [];
+        $("#record-audio-button").classList.remove("is-recording");
+        $("#record-audio-button").disabled = false;
+        $("#record-audio-button").setAttribute("aria-pressed", "false");
+        $("#record-button-label").textContent = "Record input";
+        const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (!blob.size) {
+          showToast("No audio was captured.");
+          return;
+        }
+        const extension = blob.type.includes("ogg") ? "ogg" : "webm";
+        const name = `Recording-${new Date().toISOString().replace(/[:.]/g, "-")}.${extension}`;
+        try {
+          await importRecording(new File([blob], name, { type: blob.type }), null, state.recordingStartBar);
+        } catch (error) {
+          showToast(`Could not add recording: ${error.message || "unknown error"}`);
+        }
+      });
+      recorder.start();
+      $("#record-audio-button").classList.add("is-recording");
+      $("#record-audio-button").disabled = false;
+      $("#record-audio-button").setAttribute("aria-pressed", "true");
+      $("#record-button-label").textContent = "Stop recording";
+      showToast(`Recording from bar ${state.recordingStartBar + 1}`);
+    } catch (error) {
+      state.recordingStream?.getTracks().forEach((track) => track.stop());
+      state.recordingStream = null;
+      state.mediaRecorder = null;
+      showToast(`Microphone unavailable: ${error.message || "permission was denied"}`);
     }
   }
 
@@ -783,30 +1038,35 @@
       return;
     }
     switch (track.kind) {
-      case "kick": playKick(context, output, time, step); break;
-      case "snare": playSnare(context, output, time); break;
-      case "clap": playClap(context, output, time); break;
-      case "hat": playHat(context, output, time, false); break;
-      case "openhat": playHat(context, output, time, true); break;
-      case "rim": playRim(context, output, time); break;
+      case "kick": playKick(context, output, time, step, track.variant); break;
+      case "snare": playSnare(context, output, time, track.variant); break;
+      case "clap": playClap(context, output, time, track.variant); break;
+      case "hat": playHat(context, output, time, false, track.variant); break;
+      case "openhat": playHat(context, output, time, true, track.variant); break;
+      case "rim": playRim(context, output, time, track.variant); break;
       default: break;
     }
   }
 
-  function playKick(context, output, time, step) {
+  function playKick(context, output, time, step, variant) {
     const osc = context.createOscillator();
     const envelope = context.createGain();
-    const pitch = step % 8 === 0 ? 148 : 125;
+    const settings = {
+      classic: [148, 43, 0.36],
+      deep: [92, 31, 0.56],
+      punch: [182, 58, 0.23],
+    }[variant] || [148, 43, 0.36];
+    const pitch = settings[0] * (step % 8 === 0 ? 1 : 0.88);
     osc.type = "sine";
     osc.frequency.setValueAtTime(pitch, time);
-    osc.frequency.exponentialRampToValueAtTime(43, time + 0.13);
+    osc.frequency.exponentialRampToValueAtTime(settings[1], time + settings[2] * 0.38);
     envelope.gain.setValueAtTime(0.0001, time);
     envelope.gain.exponentialRampToValueAtTime(1, time + 0.004);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.36);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + settings[2]);
     osc.connect(envelope);
     envelope.connect(output);
     osc.start(time);
-    osc.stop(time + 0.38);
+    osc.stop(time + settings[2] + 0.02);
   }
 
   function playNoise(context, output, time, duration, cutoff, peak = 0.35, resonance = 0.7) {
@@ -827,36 +1087,51 @@
     source.stop(time + duration + 0.015);
   }
 
-  function playSnare(context, output, time) {
-    playNoise(context, output, time, 0.17, 1500, 0.36);
+  function playSnare(context, output, time, variant) {
+    const settings = {
+      classic: [0.17, 1500, 0.36, 185, 0.1],
+      tight: [0.1, 2300, 0.32, 235, 0.075],
+      noise: [0.23, 1000, 0.48, 145, 0.14],
+    }[variant] || [0.17, 1500, 0.36, 185, 0.1];
+    playNoise(context, output, time, settings[0], settings[1], settings[2]);
     const body = context.createOscillator();
     const envelope = context.createGain();
     body.type = "triangle";
-    body.frequency.setValueAtTime(185, time);
+    body.frequency.setValueAtTime(settings[3], time);
     envelope.gain.setValueAtTime(0.2, time);
-    envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.1);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + settings[4]);
     body.connect(envelope);
     envelope.connect(output);
     body.start(time);
-    body.stop(time + 0.12);
+    body.stop(time + settings[4] + 0.02);
   }
 
-  function playClap(context, output, time) {
-    [0, 0.018, 0.038].forEach((offset, index) => {
-      playNoise(context, output, time + offset, index === 2 ? 0.17 : 0.045, 1100, index === 2 ? 0.28 : 0.2);
+  function playClap(context, output, time, variant) {
+    const settings = {
+      classic: [[0, 0.018, 0.038], 0.17, 1100, 0.28],
+      tight: [[0, 0.012], 0.1, 1500, 0.27],
+      layered: [[0, 0.018, 0.038, 0.062], 0.22, 900, 0.34],
+    }[variant] || [[0, 0.018, 0.038], 0.17, 1100, 0.28];
+    settings[0].forEach((offset, index) => {
+      const last = index === settings[0].length - 1;
+      playNoise(context, output, time + offset, last ? settings[1] : 0.045, settings[2], last ? settings[3] : 0.2);
     });
   }
 
-  function playHat(context, output, time, open) {
-    playNoise(context, output, time, open ? 0.34 : 0.055, 6500, open ? 0.2 : 0.16, 0.55);
+  function playHat(context, output, time, open, variant) {
+    const settings = open
+      ? ({ classic: [0.34, 6500, 0.2], shimmer: [0.48, 9000, 0.22], dark: [0.3, 3800, 0.25] }[variant] || [0.34, 6500, 0.2])
+      : ({ classic: [0.055, 6500, 0.16], soft: [0.07, 4300, 0.12], bright: [0.045, 10000, 0.2] }[variant] || [0.055, 6500, 0.16]);
+    playNoise(context, output, time, settings[0], settings[1], settings[2], 0.55);
   }
 
-  function playRim(context, output, time) {
+  function playRim(context, output, time, variant) {
     const osc = context.createOscillator();
     const envelope = context.createGain();
     osc.type = "triangle";
-    osc.frequency.setValueAtTime(880, time);
-    osc.frequency.exponentialRampToValueAtTime(420, time + 0.045);
+    const pitch = { classic: [880, 420], low: [190, 110], high: [1450, 720] }[variant] || [880, 420];
+    osc.frequency.setValueAtTime(pitch[0], time);
+    osc.frequency.exponentialRampToValueAtTime(pitch[1], time + 0.045);
     envelope.gain.setValueAtTime(0.32, time);
     envelope.gain.exponentialRampToValueAtTime(0.0001, time + 0.075);
     osc.connect(envelope);
@@ -879,7 +1154,7 @@
   }
 
   async function startPlayback() {
-    if (state.isPlaying) return;
+    if (state.isPlaying || state.isExporting) return;
     try {
       await ensureAudio();
       state.isPlaying = true;
@@ -988,7 +1263,8 @@
       swing: state.swing,
       steps: state.steps,
       selectedPreset: state.selectedPreset,
-      tracks: state.tracks.map(({ id, cells, volume, muted, solo }) => ({ id, cells, volume, muted, solo })),
+      tracks: state.tracks.map(({ id, cells, volume, muted, solo, variant }) => ({ id, cells, volume, muted, solo, variant })),
+      patternClips: state.patternClips.map(({ id, startBar }) => ({ id, startBar })),
       arrangementBars: state.arrangementBars,
       arrangementCursor: state.arrangementCursor,
       view: state.view,
@@ -1016,6 +1292,11 @@
       if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(8, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
       if (Number.isFinite(saved.arrangementCursor)) state.arrangementCursor = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, saved.arrangementCursor));
       if (saved.view === "sequencer" || saved.view === "arrangement") state.view = saved.view;
+      if (Array.isArray(saved.patternClips)) {
+        state.patternClips = saved.patternClips
+          .filter((clip) => typeof clip?.id === "string" && Number.isFinite(clip.startBar))
+          .map((clip) => ({ id: clip.id, startBar: Math.max(0, Math.min(maxPatternStartBar(), Math.floor(clip.startBar))) }));
+      }
       if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
       if (Array.isArray(saved.tracks)) {
         saved.tracks.forEach((savedTrack) => {
@@ -1025,6 +1306,7 @@
             track.cells = Array.from({ length: STEP_COUNT }, (_, index) => savedTrack.cells[index] === true);
           }
           if (Number.isFinite(savedTrack.volume)) track.volume = Math.max(0, Math.min(1, savedTrack.volume));
+          if (SOUND_VARIANTS[track.kind]?.some((sound) => sound.id === savedTrack.variant)) track.variant = savedTrack.variant;
           track.muted = savedTrack.muted === true;
           track.solo = savedTrack.solo === true;
         });
@@ -1057,6 +1339,132 @@
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
     showToast("Pattern exported as JSON");
+  }
+
+  async function exportArrangementWav() {
+    if (state.mediaRecorder?.state === "recording") {
+      showToast("Stop microphone recording before exporting the song.");
+      return;
+    }
+    const OfflineAudioContext = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+    if (!OfflineAudioContext) {
+      showToast("WAV export is not supported in this browser.");
+      return;
+    }
+    if (state.isPlaying) stopPlayback();
+    const sampleRate = 44100;
+    const secondsPerBar = 240 / state.bpm;
+    const duration = state.arrangementBars * secondsPerBar;
+    if (duration > 600) {
+      showToast("Song export is limited to 10 minutes. Shorten the arrangement or raise the tempo.");
+      return;
+    }
+
+    const previousContext = state.audioContext;
+    const previousMaster = state.masterGain;
+    const previousNoise = state.noiseBuffer;
+    const allTracks = [...state.tracks, ...state.arrangementTracks];
+    const previousGains = allTracks.map((track) => track.gainNode);
+    const button = $("#export-song-button");
+    state.isExporting = true;
+    button.disabled = true;
+    document.body.classList.add("is-exporting");
+    showToast("Rendering your song to WAV…");
+    try {
+      const context = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
+      state.audioContext = context;
+      state.masterGain = context.createGain();
+      state.masterGain.gain.value = 0.88;
+      state.masterGain.connect(context.destination);
+      state.noiseBuffer = createNoiseBuffer(context);
+      const hasSolo = allTracks.some((track) => track.solo);
+      allTracks.forEach((track) => {
+        track.gainNode = context.createGain();
+        track.gainNode.gain.value = track.muted || (hasSolo && !track.solo) ? 0 : track.volume;
+        track.gainNode.connect(state.masterGain);
+      });
+
+      state.arrangementTracks.forEach((track) => {
+        track.clips.forEach((clip) => {
+          const startTime = clip.startBar * secondsPerBar;
+          if (startTime >= duration) return;
+          const source = context.createBufferSource();
+          source.buffer = clip.buffer;
+          source.connect(track.gainNode);
+          source.start(startTime, 0, Math.min(clip.buffer.duration, duration - startTime));
+        });
+      });
+
+      const stepDuration = 60 / state.bpm / 4;
+      state.patternClips.forEach((clip) => {
+        for (let step = 0; step < state.steps; step += 1) {
+          const time = clip.startBar * secondsPerBar + step * stepDuration +
+            (step % 2 === 1 ? stepDuration * (state.swing / 100) : 0);
+          if (time >= duration) continue;
+          state.tracks.forEach((track) => {
+            if (track.cells[step] && !track.muted && (!hasSolo || track.solo)) triggerTrack(track, time, step);
+          });
+          if (state.metronome && step % 4 === 0) triggerClick(time, step === 0);
+        }
+      });
+
+      const rendered = await context.startRendering();
+      downloadBlob(encodeWav(rendered), "pulsegrid-song.wav");
+      showToast("Song exported as WAV");
+    } catch (error) {
+      showToast(`Could not export the song: ${error.message || "render failed"}`);
+    } finally {
+      state.audioContext = previousContext;
+      state.masterGain = previousMaster;
+      state.noiseBuffer = previousNoise;
+      allTracks.forEach((track, index) => { track.gainNode = previousGains[index]; });
+      state.isExporting = false;
+      button.disabled = false;
+      document.body.classList.remove("is-exporting");
+    }
+  }
+
+  function encodeWav(audioBuffer) {
+    const channels = Math.min(2, audioBuffer.numberOfChannels);
+    const frames = audioBuffer.length;
+    const dataBytes = frames * channels * 2;
+    const wav = new ArrayBuffer(44 + dataBytes);
+    const view = new DataView(wav);
+    const writeText = (offset, text) => {
+      for (let index = 0; index < text.length; index += 1) view.setUint8(offset + index, text.charCodeAt(index));
+    };
+    writeText(0, "RIFF");
+    view.setUint32(4, 36 + dataBytes, true);
+    writeText(8, "WAVE");
+    writeText(12, "fmt ");
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, channels, true);
+    view.setUint32(24, audioBuffer.sampleRate, true);
+    view.setUint32(28, audioBuffer.sampleRate * channels * 2, true);
+    view.setUint16(32, channels * 2, true);
+    view.setUint16(34, 16, true);
+    writeText(36, "data");
+    view.setUint32(40, dataBytes, true);
+    const channelData = Array.from({ length: channels }, (_, channel) => audioBuffer.getChannelData(channel));
+    let offset = 44;
+    for (let frame = 0; frame < frames; frame += 1) {
+      for (let channel = 0; channel < channels; channel += 1) {
+        const sample = Math.max(-1, Math.min(1, channelData[channel][frame]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        offset += 2;
+      }
+    }
+    return new Blob([wav], { type: "audio/wav" });
+  }
+
+  function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
 
   function randomize() {
@@ -1131,12 +1539,19 @@
     $("#clear-button").addEventListener("click", clearPattern);
     $("#randomize-button").addEventListener("click", randomize);
     $("#export-button").addEventListener("click", exportPattern);
+    $("#export-song-button").addEventListener("click", exportArrangementWav);
     $("#metronome-button").addEventListener("click", toggleMetronome);
     $("#help-button").addEventListener("click", () => $("#help-dialog").showModal());
     $("#sequencer-tab").addEventListener("click", () => setWorkspaceView("sequencer"));
     $("#arrangement-tab").addEventListener("click", () => setWorkspaceView("arrangement"));
+    $("#pattern-source").addEventListener("click", () => addPatternClip());
+    $("#pattern-source").addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("application/x-pulsegrid-pattern-source", "current-pattern");
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "copy";
+    });
     $("#import-recording-button").addEventListener("click", () => requestRecordingImport());
     $("#empty-import-button").addEventListener("click", () => requestRecordingImport());
+    $("#side-add-recording").addEventListener("click", () => requestRecordingImport());
     $("#recording-input").addEventListener("change", async (event) => {
       const files = Array.from(event.target.files || []);
       for (const file of files) await importRecording(file, state.pendingImportTrackId);
@@ -1158,11 +1573,13 @@
       renderArrangement();
       saveState();
     });
+    $("#record-audio-button").addEventListener("click", toggleAudioRecording);
     $("#arrangement-clear-button").addEventListener("click", () => {
-      if (!state.arrangementTracks.length) return;
-      if (!window.confirm("Remove all imported recordings from this arrangement?")) return;
+      if (!state.arrangementTracks.length && !state.patternClips.length) return;
+      if (!window.confirm("Remove all clips from this arrangement?")) return;
       state.arrangementTracks.forEach((track) => track.clips.forEach((clip) => deletePersistedClip(clip.id)));
       state.arrangementTracks = [];
+      state.patternClips = [];
       state.arrangementBars = 8;
       state.arrangementCursor = 0;
       renderArrangement();
@@ -1195,7 +1612,8 @@
     document.addEventListener("keydown", (event) => {
       const target = event.target;
       const isTyping = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
-      if (event.code === "Space" && !isTyping && !$("#help-dialog").open) {
+      const isButton = target instanceof HTMLElement && target.tagName === "BUTTON";
+      if (event.code === "Space" && !isTyping && !isButton && !$("#help-dialog").open) {
         event.preventDefault();
         state.isPlaying ? stopPlayback() : startPlayback();
       }
