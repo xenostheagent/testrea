@@ -109,6 +109,7 @@
   const tempoValue = $("#tempo-value");
   const swingSlider = $("#swing-slider");
   const sampleInput = $("#sample-input");
+  const drumSamplesInput = $("#drum-samples-input");
   const toast = $("#toast");
 
   function makeTracks() {
@@ -157,7 +158,9 @@
       subtitle.className = `track-subtitle${track.sample ? " has-sample" : ""}`;
       subtitle.title = track.sample?.name || track.subtitle;
       subtitle.textContent = track.sample?.name || track.subtitle;
-      info.append(name, subtitle, makeSoundSelect(track));
+      info.append(name, subtitle);
+      const soundSelect = makeSoundSelect(track);
+      if (soundSelect) info.append(soundSelect);
 
       const controls = document.createElement("div");
       controls.className = "track-controls";
@@ -166,6 +169,7 @@
         makeTrackButton("solo", "Solo track", track),
         makeTrackButton("sample", track.sample ? "Replace loaded sample" : "Load an audio sample", track),
       );
+      if (track.kind === "sample") controls.append(makeTrackButton("remove", "Remove imported drum sound", track));
       const volume = document.createElement("input");
       volume.className = "track-volume";
       volume.type = "range";
@@ -210,10 +214,12 @@
   }
 
   function makeSoundSelect(track, compact = false) {
+    const sounds = SOUND_VARIANTS[track.kind];
+    if (!sounds) return null;
     const select = document.createElement("select");
     select.className = `sound-variant${compact ? " is-compact" : ""}`;
     select.setAttribute("aria-label", `${track.name} sound`);
-    (SOUND_VARIANTS[track.kind] || SOUND_VARIANTS.kick).forEach((sound) => {
+    sounds.forEach((sound) => {
       const option = document.createElement("option");
       option.value = sound.id;
       option.textContent = sound.name;
@@ -241,6 +247,11 @@
         state.sampleTrackId = track.id;
         sampleInput.click();
       });
+      return button;
+    }
+    if (type === "remove") {
+      button.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 6h12m-10 0 .7 10h6.6L14 6M8 6V4h4v2m-3 3v4m2-4v4" /></svg>';
+      button.addEventListener("click", () => removeImportedDrumTrack(track));
       return button;
     }
     if (type === "mute") {
@@ -405,6 +416,83 @@
     return file.type.startsWith("audio/") || /\.(wav|wave|mp3|m4a|aac|flac|ogg|opus|webm|aiff?)$/i.test(file.name);
   }
 
+  function makeDrumSampleTrack(options) {
+    const name = options.name?.trim() || "Imported drum";
+    const track = {
+      id: options.id || makeId(),
+      name,
+      kind: "sample",
+      color: /^#[\da-f]{6}$/i.test(options.color || "") ? options.color : TRACK_COLORS[state.tracks.length % TRACK_COLORS.length],
+      subtitle: "Imported drum sample",
+      volume: Number.isFinite(options.volume) ? Math.max(0, Math.min(1, options.volume)) : 0.72,
+      cells: Array.from({ length: STEP_COUNT }, (_, index) => options.cells?.[index] === true),
+      variant: null,
+      muted: options.muted === true,
+      solo: options.solo === true,
+      sample: options.buffer ? { name: options.fileName || name, buffer: options.buffer } : null,
+      gainNode: null,
+    };
+    ensureSequencerTrackAudio(track);
+    return track;
+  }
+
+  async function importDrumSamples(files) {
+    if (!files.length) return;
+    const imported = [];
+    const failures = [];
+    try {
+      await ensureAudio();
+      for (const file of files) {
+        if (!isAudioFile(file)) {
+          failures.push(file.name);
+          continue;
+        }
+        try {
+          const buffer = await state.audioContext.decodeAudioData(await file.arrayBuffer());
+          const track = makeDrumSampleTrack({
+            name: file.name.replace(/\.[^.]+$/, "") || file.name,
+            fileName: file.name,
+            buffer,
+          });
+          state.tracks.push(track);
+          imported.push({ track, file });
+        } catch {
+          failures.push(file.name);
+        }
+      }
+
+      if (imported.length) {
+        renderTracks();
+        if (state.view === "arrangement") renderArrangement();
+        saveState();
+        const saves = await Promise.allSettled(imported.map(({ track, file }) => persistDrumSample(track, file)));
+        const storageFailed = saves.some((result) => result.status === "rejected");
+        const summary = `${imported.length} drum sound${imported.length === 1 ? "" : "s"} imported`;
+        showToast(`${summary}${failures.length ? `; ${failures.length} could not be decoded` : ""}${storageFailed ? "; some couldn't be saved" : ""}.`);
+      } else {
+        showToast(failures.length ? `Could not import ${failures.join(", ")}.` : "Choose one or more audio files.");
+      }
+    } catch (error) {
+      showToast(`Could not import drum sounds: ${error.message || "audio is unavailable"}`);
+    } finally {
+      drumSamplesInput.value = "";
+    }
+  }
+
+  function removeImportedDrumTrack(track) {
+    if (state.isPlaying) stopPlayback();
+    track.gainNode?.disconnect();
+    state.tracks = state.tracks.filter((item) => item !== track);
+    renderTracks();
+    if (state.view === "arrangement") renderArrangement();
+    updateTrackGains();
+    saveState();
+    deletePersistedDrumSample(track.id).catch(() => {
+      showToast("Track removed, but its saved sample could not be deleted.");
+    });
+    showToast(`${track.name} removed`);
+  }
+
   function createArrangementTrack(name = "Audio track") {
     const track = {
       id: makeId(),
@@ -546,6 +634,7 @@
   function renderInstrumentBrowser() {
     const browser = $("#instrument-browser");
     browser.replaceChildren();
+    $("#drum-sound-count").textContent = String(state.tracks.length);
     state.tracks.forEach((track) => {
       const row = document.createElement("div");
       row.className = "instrument-source";
@@ -555,7 +644,10 @@
       const name = document.createElement("span");
       name.className = "instrument-source-name";
       name.textContent = track.name;
-      row.append(color, name, makeSoundSelect(track, true));
+      name.title = track.sample?.name || track.subtitle;
+      row.append(color, name);
+      const soundSelect = makeSoundSelect(track, true);
+      if (soundSelect) row.append(soundSelect);
       browser.append(row);
     });
   }
@@ -950,6 +1042,38 @@
     }));
   }
 
+  function persistDrumSample(track, file) {
+    return openRecordingDb().then((database) => new Promise((resolve, reject) => {
+      const transaction = database.transaction("recordings", "readwrite");
+      transaction.objectStore("recordings").put({
+        id: `drum-sample:${track.id}`,
+        recordType: "drum-sample",
+        trackId: track.id,
+        trackName: track.name,
+        fileName: file.name,
+        color: track.color,
+        volume: track.volume,
+        muted: track.muted,
+        solo: track.solo,
+        cells: track.cells,
+        blob: file,
+      });
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not save drum sample")); };
+      transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Drum sample save was cancelled")); };
+    }));
+  }
+
+  function deletePersistedDrumSample(trackId) {
+    return openRecordingDb().then((database) => new Promise((resolve, reject) => {
+      const transaction = database.transaction("recordings", "readwrite");
+      transaction.objectStore("recordings").delete(`drum-sample:${trackId}`);
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not remove drum sample")); };
+      transaction.onabort = () => { database.close(); reject(transaction.error || new Error("Drum sample removal was cancelled")); };
+    }));
+  }
+
   function persistTrackClips(track) {
     track.clips.forEach((clip) => persistClip(track, clip).catch(() => {
       showToast("Could not save the latest track changes.");
@@ -978,7 +1102,36 @@
       });
       if (!records.length) return;
       initializeAudio();
-      for (const record of records) {
+      const sampleRecords = records.filter((record) => record.recordType === "drum-sample");
+      for (const record of sampleRecords) {
+        try {
+          const buffer = await state.audioContext.decodeAudioData(await record.blob.arrayBuffer());
+          let track = state.tracks.find((item) => item.id === record.trackId);
+          if (!track) {
+            track = makeDrumSampleTrack({
+              id: record.trackId,
+              name: record.trackName,
+              fileName: record.fileName,
+              color: record.color,
+              volume: record.volume,
+              muted: record.muted,
+              solo: record.solo,
+              cells: record.cells,
+              buffer,
+            });
+            state.tracks.push(track);
+          } else {
+            track.sample = { name: record.fileName || record.trackName, buffer };
+            ensureSequencerTrackAudio(track);
+            if (track.kind === "sample") track.subtitle = "Imported drum sample";
+          }
+        } catch {
+          showToast(`Could not restore ${record.fileName || record.trackName || "a drum sample"}.`);
+        }
+      }
+
+      const clipRecords = records.filter((record) => record.recordType !== "drum-sample");
+      for (const record of clipRecords) {
         let track = state.arrangementTracks.find((item) => item.id === record.trackId);
         if (!track) {
           track = {
@@ -1002,9 +1155,11 @@
         }
       }
       state.arrangementTracks = state.arrangementTracks.filter((track) => track.clips.length > 0);
+      if (sampleRecords.length) renderTracks();
       updateArrangementLength();
       renderArrangement();
       if (state.arrangementTracks.length) showToast("Your saved recordings are ready.");
+      else if (sampleRecords.length) showToast("Your saved drum sounds are ready.");
     } catch {
       showToast("Saved recordings could not be restored.");
     }
@@ -1228,16 +1383,20 @@
       showToast("Choose an audio file such as WAV, MP3, or OGG.");
       return;
     }
+    let sampleLoaded = false;
     try {
       await ensureAudio();
       const bytes = await file.arrayBuffer();
       const buffer = await state.audioContext.decodeAudioData(bytes);
       track.sample = { name: file.name, buffer };
+      sampleLoaded = true;
       renderTracks();
       saveState();
+      await persistDrumSample(track, file);
       showToast(`${file.name} loaded on ${track.name}`);
     } catch (error) {
-      showToast(`Could not load that audio file: ${error.message || "unsupported format"}`);
+      if (sampleLoaded) showToast(`${file.name} loaded, but could not be saved: ${error.message || "browser storage is unavailable"}`);
+      else showToast(`Could not load that audio file: ${error.message || "unsupported format"}`);
     } finally {
       sampleInput.value = "";
       state.sampleTrackId = null;
@@ -1260,7 +1419,18 @@
       swing: state.swing,
       steps: state.steps,
       selectedPreset: state.selectedPreset,
-      tracks: state.tracks.map(({ id, cells, volume, muted, solo, variant }) => ({ id, cells, volume, muted, solo, variant })),
+      tracks: state.tracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        kind: track.kind,
+        color: track.color,
+        cells: track.cells,
+        volume: track.volume,
+        muted: track.muted,
+        solo: track.solo,
+        variant: track.variant,
+        sampleName: track.sample?.name || null,
+      })),
       patternClips: state.patternClips.map(({ id, startBar }) => ({ id, startBar })),
       arrangementBars: state.arrangementBars,
       arrangementCursor: state.arrangementCursor,
@@ -1297,7 +1467,19 @@
       if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
       if (Array.isArray(saved.tracks)) {
         saved.tracks.forEach((savedTrack) => {
-          const track = state.tracks.find((item) => item.id === savedTrack.id);
+          let track = state.tracks.find((item) => item.id === savedTrack.id);
+          if (!track && savedTrack.kind === "sample" && typeof savedTrack.id === "string" && typeof savedTrack.name === "string") {
+            track = makeDrumSampleTrack({
+              id: savedTrack.id,
+              name: savedTrack.name,
+              color: savedTrack.color,
+              volume: savedTrack.volume,
+              muted: savedTrack.muted,
+              solo: savedTrack.solo,
+              cells: savedTrack.cells,
+            });
+            state.tracks.push(track);
+          }
           if (!track) return;
           if (Array.isArray(savedTrack.cells)) {
             track.cells = Array.from({ length: STEP_COUNT }, (_, index) => savedTrack.cells[index] === true);
@@ -1585,9 +1767,23 @@
       saveState();
       showToast("Arrangement cleared");
     });
+    $("#project-name").addEventListener("click", () => {
+      const title = window.prompt("Name this session", $("#project-name").firstChild.textContent.trim());
+      if (title?.trim()) {
+        $("#project-name").firstChild.textContent = title.trim();
+        try { window.localStorage.setItem(`${STORAGE_KEY}-name`, title.trim()); } catch { /* Storage may be disabled. */ }
+      }
+    });
+    sampleInput.addEventListener("change", () => loadSample(sampleInput.files?.[0]));
+    $("#import-drum-sounds-button").addEventListener("click", () => drumSamplesInput.click());
+    drumSamplesInput.addEventListener("change", () => importDrumSamples(Array.from(drumSamplesInput.files || [])));
     $("#reset-session").addEventListener("click", () => {
       if (!window.confirm("Reset this session to the starter pattern?")) return;
       stopPlayback();
+      state.tracks.filter((track) => track.sample || track.kind === "sample").forEach((track) => {
+        deletePersistedDrumSample(track.id).catch(() => showToast(`Could not remove saved sample ${track.name}.`));
+      });
+      state.tracks.forEach((track) => track.gainNode?.disconnect());
       state.tracks = makeTracks();
       state.bpm = 124;
       state.swing = 0;
@@ -1600,14 +1796,6 @@
       setLength(16);
       loadPreset(PRESETS[0]);
     });
-    $("#project-name").addEventListener("click", () => {
-      const title = window.prompt("Name this session", $("#project-name").firstChild.textContent.trim());
-      if (title?.trim()) {
-        $("#project-name").firstChild.textContent = title.trim();
-        try { window.localStorage.setItem(`${STORAGE_KEY}-name`, title.trim()); } catch { /* Storage may be disabled. */ }
-      }
-    });
-    sampleInput.addEventListener("change", () => loadSample(sampleInput.files?.[0]));
     document.addEventListener("keydown", (event) => {
       const target = event.target;
       const isTyping = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));

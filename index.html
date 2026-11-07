@@ -194,7 +194,8 @@
         <dialog class="source-browser-dialog" id="source-browser-dialog" aria-label="Instrument and audio browser">
           <aside class="source-sidebar">
             <div class="source-sidebar-heading">SOURCES <button id="source-browser-close" type="button" aria-label="Close browser">×</button></div>
-            <div class="source-section-label instrument-section-label">DRUM SOUNDS</div>
+            <div class="source-section-label instrument-section-label">DRUM SOUNDS <span id="drum-sound-count">6</span></div>
+            <button class="source-add-button" id="import-drum-sounds-button" type="button">＋ Import drum sounds</button>
             <div class="instrument-browser" id="instrument-browser"></div>
             <div class="source-section-label recordings-section-label">RECORDINGS <span id="recording-source-count">0</span></div>
             <div class="recording-browser" id="recording-browser"></div>
@@ -203,6 +204,7 @@
         </dialog>
       </main>
       <input id="sample-input" type="file" accept="audio/*" hidden />
+      <input id="drum-samples-input" type="file" accept="audio/*" multiple hidden />
       <input id="recording-input" type="file" accept="audio/*" multiple hidden />
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
       <dialog class="help-dialog" id="help-dialog">
@@ -211,7 +213,7 @@
           <div class="eyebrow">QUICK HELP</div>
           <h2>Your first groove</h2>
           <p>Click squares to switch drum hits on or off. Press <kbd>Space</kbd> to play, then change the tempo or swing while it runs.</p>
-          <p>Use the <strong>+</strong> button next to any drum to load an audio file. Imported samples play right in the sequence.</p>
+          <p>Use the <strong>+</strong> next to a drum to replace its sample, or open <strong>Browser → Import drum sounds</strong> to add multiple samples as new sequencer tracks.</p>
           <p>Open <strong>Arrangement</strong> to add vocal takes or loops on separate tracks. Drag clips to line them up with your beat; playback combines all tracks at the project tempo.</p>
           <p>Patterns and imported recordings are saved in this browser. Export a full arrangement as WAV or download the drum pattern as JSON.</p>
         </form>
