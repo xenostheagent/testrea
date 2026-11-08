@@ -109,7 +109,7 @@
   const PIANO_TICKS_PER_BAR = 32;
   const PIANO_ROW_HEIGHT = 18;
   const PIANO_TOP_MIDI = 83;
-  const PIANO_BOTTOM_MIDI = 36;
+  const PIANO_BOTTOM_MIDI = 35;
   const state = {
     tracks: [],
     patterns: [],
@@ -123,6 +123,9 @@
     pianoNoteLength: 2,
     selectedPianoTrackId: "piano-grand",
     selectedPianoNoteId: null,
+    workspaceRatio: 50,
+    workspaceHidden: false,
+    trackViewHidden: false,
     scheduledPianoNotes: new Set(),
     suppressPianoGridClick: false,
     steps: 16,
@@ -183,6 +186,37 @@
 
   function isSongWorkspace() {
     return state.view === "arrangement" || state.view === "piano-roll";
+  }
+
+  function renderViewLayout() {
+    const main = $("#arrangement-main");
+    $("#workspace-area").hidden = state.workspaceHidden;
+    $("#track-view-area").hidden = state.trackViewHidden;
+    $("#view-resizer").hidden = state.workspaceHidden || state.trackViewHidden;
+    if (state.workspaceHidden) main.style.gridTemplateRows = "0px 0px minmax(0, 1fr)";
+    else if (state.trackViewHidden) main.style.gridTemplateRows = "minmax(0, 1fr) 0px 0px";
+    else main.style.gridTemplateRows = `minmax(0, ${state.workspaceRatio}fr) 9px minmax(0, ${100 - state.workspaceRatio}fr)`;
+    $("#view-resizer").setAttribute("aria-valuenow", String(state.workspaceRatio));
+    $("#view-resizer").setAttribute("aria-valuetext", `Workspace ${state.workspaceRatio}%, Track View ${100 - state.workspaceRatio}%`);
+    $("#hide-workspace-button").hidden = state.workspaceHidden;
+    $("#show-track-view-button").hidden = !state.trackViewHidden;
+    $("#hide-track-view-button").hidden = state.trackViewHidden;
+    $("#show-workspace-button").hidden = !state.workspaceHidden;
+  }
+
+  function setViewVisibility(workspaceHidden, trackViewHidden) {
+    state.workspaceHidden = workspaceHidden;
+    state.trackViewHidden = trackViewHidden;
+    renderViewLayout();
+    saveState();
+    if (workspaceHidden) $("#show-workspace-button").focus();
+    if (trackViewHidden) $("#show-track-view-button").focus();
+  }
+
+  function setWorkspaceRatio(ratio) {
+    state.workspaceRatio = Math.max(20, Math.min(80, Math.round(ratio)));
+    renderViewLayout();
+    saveState();
   }
 
   function getPatternColor(index) {
@@ -1584,9 +1618,10 @@
   }
 
   function setWorkspaceView(view, force = false) {
-    if (view === state.view && !force) return;
+    if (view === state.view && !force && !state.workspaceHidden) return;
     if (state.isPlaying) stopPlayback();
     state.view = view;
+    state.workspaceHidden = false;
     const showSequencer = view === "sequencer";
     const showPianoRoll = view === "piano-roll";
     $("#arrangement-view").hidden = false;
@@ -1614,6 +1649,7 @@
       renderPianoRoll();
     }
     renderArrangement();
+    renderViewLayout();
     saveState();
   }
 
@@ -2027,21 +2063,103 @@
   function playDrumKitNote(track, time, midi, duration, velocity) {
     const kit = track.patch?.kit || "909";
     const kits = {
-      "909": { kick: "classic", snare: "classic", clap: "classic", hat: "bright", openhat: "classic", rim: "high" },
-      "808": { kick: "deep", snare: "body", clap: "room", hat: "soft", openhat: "dark", rim: "low" },
-      industrial: { kick: "industrial", snare: "metal", clap: "layered", hat: "vinyl", openhat: "wash", rim: "wood" },
+      "909": { kick: "classic", snare: "classic", altSnare: "tight", clap: "classic", hat: "bright", pedalHat: "soft", openhat: "classic", cymbal: "shimmer", ride: "classic", rim: "high" },
+      "808": { kick: "deep", snare: "body", altSnare: "noise", clap: "room", hat: "soft", pedalHat: "soft", openhat: "dark", cymbal: "dark", ride: "shimmer", rim: "low" },
+      industrial: { kick: "industrial", snare: "metal", altSnare: "body", clap: "layered", hat: "vinyl", pedalHat: "vinyl", openhat: "wash", cymbal: "wash", ride: "shimmer", rim: "wood" },
     };
     const sounds = kits[kit] || kits["909"];
-    const scale = duration / getStepDuration();
+    const scale = Math.max(0.25, Math.min(4, duration / getStepDuration()));
+    const context = state.audioContext;
     const noteGain = state.audioContext.createGain();
     noteGain.gain.setValueAtTime(velocity, time);
     noteGain.connect(track.gainNode);
-    if (midi === 36 || midi === 35) playKick(state.audioContext, noteGain, time, midi, sounds.kick, scale);
-    else if (midi === 38 || midi === 40) playSnare(state.audioContext, noteGain, time, sounds.snare, scale);
-    else if (midi === 39) playClap(state.audioContext, noteGain, time, sounds.clap, scale);
-    else if (midi === 42 || midi === 44) playHat(state.audioContext, noteGain, time, false, sounds.hat, scale);
-    else if (midi === 46) playHat(state.audioContext, noteGain, time, true, sounds.openhat, scale);
-    else playRim(state.audioContext, noteGain, time, sounds.rim, scale);
+    if (midi === 35 || midi === 36) playKick(context, noteGain, time, midi, sounds.kick, scale);
+    else if (midi === 37) playRim(context, noteGain, time, sounds.rim, scale * 0.7);
+    else if (midi === 38) playSnare(context, noteGain, time, sounds.snare, scale);
+    else if (midi === 39) playClap(context, noteGain, time, sounds.clap, scale);
+    else if (midi === 40) playSnare(context, noteGain, time, sounds.altSnare, scale);
+    else if ([41, 43, 45, 47, 48, 50, 60, 61, 62, 63, 64, 65, 66, 67, 68, 75, 76, 77].includes(midi)) {
+      playDrumKitTom(noteGain, time, midi, velocity, scale, kit);
+    }
+    else if (midi === 42) playHat(context, noteGain, time, false, sounds.hat, scale);
+    else if (midi === 44) playHat(context, noteGain, time, false, sounds.pedalHat, scale * 0.65);
+    else if (midi === 46) playHat(context, noteGain, time, true, sounds.openhat, scale);
+    else if ([49, 52, 55, 57, 82, 83].includes(midi)) playHat(context, noteGain, time, true, sounds.cymbal, scale * ([52, 82].includes(midi) ? 1.8 : 2.4));
+    else if ([51, 59].includes(midi)) playHat(context, noteGain, time, true, sounds.ride, scale * 1.8);
+    else if (midi === 53 || midi === 56) playDrumKitBell(noteGain, time, midi === 53 ? 1120 : 680, velocity, scale);
+    else if (midi === 54) playNoise(context, noteGain, time, 0.15 * scale, 4200, 0.2);
+    else if (midi === 58) playNoise(context, noteGain, time, 0.23 * scale, 1100, 0.26);
+    else if ([69, 70, 73, 74, 78, 79].includes(midi)) {
+      const percussion = {
+        69: [0.12, 3200, 0.18], 70: [0.12, 5600, 0.18], 73: [0.14, 2800, 0.24],
+        74: [0.34, 1800, 0.3], 78: [0.11, 1500, 0.2], 79: [0.28, 900, 0.3],
+      }[midi];
+      playNoise(context, noteGain, time, percussion[0] * scale, percussion[1], percussion[2]);
+    }
+    else if (midi === 71 || midi === 72) playDrumKitTone(noteGain, time, midi === 71 ? 1450 : 980, midi === 71 ? 0.12 : 0.3, velocity);
+    else if (midi === 80 || midi === 81) playDrumKitBell(noteGain, time, midi === 80 ? 1680 : 2200, velocity, scale);
+    else playRim(context, noteGain, time, sounds.rim, scale);
+  }
+
+  function playDrumKitTom(output, time, midi, velocity, scale, kit) {
+    const context = state.audioContext;
+    const pitches = {
+      41: [175, 90], 43: [195, 100], 45: [220, 112], 47: [255, 130], 48: [290, 145], 50: [340, 170],
+      60: [540, 300], 61: [320, 180], 62: [410, 260], 63: [360, 140], 64: [230, 90],
+      65: [600, 300], 66: [420, 220], 67: [780, 420], 68: [560, 310], 75: [1800, 950],
+      76: [1200, 650], 77: [720, 380],
+    };
+    const [startPitch, endPitch] = pitches[midi] || pitches[45];
+    const baseDuration = { 75: 0.11, 76: 0.13, 77: 0.16 }[midi] || (kit === "industrial" ? 0.28 : 0.34);
+    const duration = Math.min(0.75, baseDuration * scale);
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    oscillator.type = kit === "industrial" ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(startPitch, time);
+    oscillator.frequency.exponentialRampToValueAtTime(endPitch, time + duration * 0.72);
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, velocity * 0.72), time + 0.004);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    oscillator.connect(envelope);
+    envelope.connect(output);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
+  }
+
+  function playDrumKitBell(output, time, frequency, velocity, scale) {
+    const context = state.audioContext;
+    const envelope = context.createGain();
+    const duration = Math.min(0.55, 0.28 * scale);
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, velocity * 0.24), time + 0.003);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    [frequency, frequency * 1.48].forEach((partial, index) => {
+      const oscillator = context.createOscillator();
+      const partialGain = context.createGain();
+      oscillator.type = "square";
+      oscillator.frequency.setValueAtTime(partial, time);
+      partialGain.gain.value = index ? 0.42 : 1;
+      oscillator.connect(partialGain);
+      partialGain.connect(envelope);
+      oscillator.start(time);
+      oscillator.stop(time + duration + 0.02);
+    });
+    envelope.connect(output);
+  }
+
+  function playDrumKitTone(output, time, frequency, duration, velocity) {
+    const context = state.audioContext;
+    const oscillator = context.createOscillator();
+    const envelope = context.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(frequency, time);
+    envelope.gain.setValueAtTime(0.0001, time);
+    envelope.gain.exponentialRampToValueAtTime(Math.max(0.0002, velocity * 0.2), time + 0.004);
+    envelope.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+    oscillator.connect(envelope);
+    envelope.connect(output);
+    oscillator.start(time);
+    oscillator.stop(time + duration + 0.02);
   }
 
   function playKick(context, output, time, step, variant, durationScale) {
@@ -2311,6 +2429,9 @@
       selectedPianoTrackId: state.selectedPianoTrackId,
       arrangementBars: state.arrangementBars,
       arrangementCursor: state.arrangementCursor,
+      workspaceRatio: state.workspaceRatio,
+      workspaceHidden: state.workspaceHidden,
+      trackViewHidden: state.trackViewHidden,
       view: state.view,
     };
     window.clearTimeout(saveState.timeout);
@@ -2335,6 +2456,10 @@
       if (saved.steps === 16 || saved.steps === 32) state.steps = saved.steps;
       if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(8, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
       if (Number.isFinite(saved.arrangementCursor)) state.arrangementCursor = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, saved.arrangementCursor));
+      if (Number.isFinite(saved.workspaceRatio)) state.workspaceRatio = Math.max(20, Math.min(80, Math.round(saved.workspaceRatio)));
+      if (typeof saved.workspaceHidden === "boolean") state.workspaceHidden = saved.workspaceHidden;
+      if (typeof saved.trackViewHidden === "boolean") state.trackViewHidden = saved.trackViewHidden;
+      if (state.workspaceHidden && state.trackViewHidden) state.trackViewHidden = false;
       if (["sequencer", "arrangement", "piano-roll"].includes(saved.view)) state.view = saved.view;
       if (saved.selectedPreset === null) state.selectedPreset = null;
       else if (PRESETS.some((preset) => preset.id === saved.selectedPreset)) state.selectedPreset = saved.selectedPreset;
@@ -2717,8 +2842,43 @@
     $("#sequencer-tab").addEventListener("click", () => setWorkspaceView("sequencer"));
     $("#arrangement-tab").addEventListener("click", () => setWorkspaceView("arrangement"));
     $("#piano-roll-tab").addEventListener("click", () => setWorkspaceView("piano-roll"));
-    $("#open-beat-grid-button").addEventListener("click", () => setWorkspaceView(state.view === "sequencer" ? "arrangement" : "sequencer"));
-    $("#open-piano-roll-button").addEventListener("click", () => setWorkspaceView(state.view === "piano-roll" ? "arrangement" : "piano-roll"));
+    $("#hide-workspace-button").addEventListener("click", () => setViewVisibility(true, false));
+    $("#show-workspace-button").addEventListener("click", () => setViewVisibility(false, false));
+    $("#hide-track-view-button").addEventListener("click", () => setViewVisibility(false, true));
+    $("#show-track-view-button").addEventListener("click", () => setViewVisibility(false, false));
+    const viewResizer = $("#view-resizer");
+    viewResizer.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      const main = $("#arrangement-main");
+      const updateRatio = (moveEvent) => {
+        const bounds = main.getBoundingClientRect();
+        const available = bounds.height - viewResizer.offsetHeight;
+        if (available <= 0) return;
+        const pointerOffset = moveEvent.clientY - bounds.top - viewResizer.offsetHeight / 2;
+        state.workspaceRatio = Math.max(20, Math.min(80, Math.round(pointerOffset / available * 100)));
+        renderViewLayout();
+      };
+      const finish = () => {
+        document.removeEventListener("pointermove", updateRatio);
+        document.removeEventListener("pointerup", finish);
+        document.removeEventListener("pointercancel", finish);
+        saveState();
+      };
+      document.addEventListener("pointermove", updateRatio);
+      document.addEventListener("pointerup", finish);
+      document.addEventListener("pointercancel", finish);
+    });
+    viewResizer.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowUp") setWorkspaceRatio(state.workspaceRatio + 5);
+      else if (event.key === "ArrowDown") setWorkspaceRatio(state.workspaceRatio - 5);
+      else if (event.key === "Home") setWorkspaceRatio(20);
+      else if (event.key === "End") setWorkspaceRatio(80);
+      else return;
+      event.preventDefault();
+    });
+    $("#open-beat-grid-button").addEventListener("click", () => setWorkspaceView(state.view === "sequencer" && !state.workspaceHidden ? "arrangement" : "sequencer"));
+    $("#open-piano-roll-button").addEventListener("click", () => setWorkspaceView(state.view === "piano-roll" && !state.workspaceHidden ? "arrangement" : "piano-roll"));
     $("#piano-instrument-select").addEventListener("change", (event) => {
       state.selectedPianoTrackId = event.target.value;
       saveState();
@@ -2854,6 +3014,9 @@
       state.pianoNoteLength = 2;
       state.selectedPianoTrackId = "piano-grand";
       state.selectedPianoNoteId = null;
+      state.workspaceRatio = 50;
+      state.workspaceHidden = false;
+      state.trackViewHidden = false;
       state.bpm = 124;
       state.swing = 0;
       state.selectedPreset = "warehouse";

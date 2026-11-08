@@ -138,9 +138,15 @@
 
           <div class="arrangement-card" id="arrangement-card">
             <div class="arrangement-layout">
-              <div class="arrangement-main">
-                <section class="workspace-area" aria-label="Workspace">
-                  <div class="workspace-area-heading">WORKSPACE</div>
+              <div class="arrangement-main" id="arrangement-main">
+                <section class="workspace-area" id="workspace-area" aria-label="Workspace">
+                  <div class="workspace-area-heading">
+                    <span>WORKSPACE</span>
+                    <div class="view-panel-actions">
+                      <button class="quiet-button" id="show-track-view-button" type="button" hidden>Show Track View</button>
+                      <button class="quiet-button" id="hide-workspace-button" type="button">Hide</button>
+                    </div>
+                  </div>
                   <div class="workspace-content">
                     <div class="arrangement-empty" id="arrangement-empty">
                       <span class="empty-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
@@ -246,16 +252,21 @@
                           <div class="piano-roll-grid" id="piano-roll-grid" aria-label="Piano roll note grid"></div>
                         </div>
                       </div>
-                      <div class="piano-roll-footer">Click to add · Drag to move · Drag right edge to resize · Delete removes selected note · Drum kits: C2 kick, D2 snare, D♯2 clap, F♯2 closed hat, A♯2 open hat</div>
+                      <div class="piano-roll-footer">Click to add · Drag to move/resize · Delete removes selected note · Drum kits use GM keys B1-A5 for kicks, snares, toms, hats, cymbals and percussion</div>
                     </section>
                   </div>
                 </section>
-                <section class="track-view-area" aria-label="Track view">
+                <div class="view-resizer" id="view-resizer" role="separator" aria-label="Resize Workspace and Track View" aria-orientation="horizontal" aria-valuemin="20" aria-valuemax="80" aria-valuenow="50" tabindex="0">
+                  <span></span>
+                </div>
+                <section class="track-view-area" id="track-view-area" aria-label="Track view">
                   <div class="track-view-heading">
                     <span>TRACK VIEW</span>
                     <div class="track-view-controls">
+                      <button class="quiet-button" id="show-workspace-button" type="button" hidden>Show Workspace</button>
                       <span class="arrangement-bar-label" id="arrangement-bar-label">8 BARS</span>
                       <button class="quiet-button" id="add-bars-button" type="button">+ 4 BARS</button>
+                      <button class="quiet-button" id="hide-track-view-button" type="button">Hide</button>
                     </div>
                   </div>
                   <div class="arrangement-editor" id="arrangement-editor">
