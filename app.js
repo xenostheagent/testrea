@@ -116,6 +116,9 @@
     selectedPatternId: null,
     arrangementTracks: [],
     patternClips: [],
+    mels: [],
+    selectedMelId: null,
+    melTracks: [],
     pianoNotes: [],
     pianoStartBar: 0,
     pianoBars: 4,
@@ -132,7 +135,7 @@
     view: "arrangement",
     bpm: 124,
     swing: 0,
-    arrangementBars: 8,
+    arrangementBars: 32,
     arrangementCursor: 0,
     arrangementSources: new Set(),
     playbackStartTime: 0,
@@ -330,6 +333,118 @@
 
   function getPianoTrack(trackId = state.selectedPianoTrackId) {
     return state.tracks.find((track) => track.id === trackId) || null;
+  }
+
+  function getMel(melId = state.selectedMelId) {
+    return state.mels.find((mel) => mel.id === melId) || null;
+  }
+
+  function makeMel(name, instrumentId = state.selectedPianoTrackId, bars = state.pianoBars, notes = []) {
+    return { id: makeId(), name, instrumentId, bars, notes: notes.map((note) => ({ ...note })) };
+  }
+
+  function captureCurrentMel() {
+    const mel = getMel();
+    if (!mel) return;
+    mel.instrumentId = state.selectedPianoTrackId;
+    mel.bars = state.pianoBars;
+    mel.notes = state.pianoNotes.map((note) => ({ ...note, trackId: mel.instrumentId }));
+  }
+
+  function loadMel(melId) {
+    const mel = getMel(melId);
+    if (!mel) return;
+    state.selectedMelId = mel.id;
+    state.selectedPianoTrackId = state.tracks.some((track) => track.id === mel.instrumentId)
+      ? mel.instrumentId
+      : state.tracks.find((track) => track.id === "piano-grand")?.id || state.tracks[0]?.id || "";
+    state.pianoBars = [1, 2, 4, 8].includes(mel.bars) ? mel.bars : 4;
+    state.pianoNotes = mel.notes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
+    state.selectedPianoNoteId = null;
+  }
+
+  function ensureMels() {
+    if (!state.mels.length) {
+      const mel = makeMel("Mel 1", state.selectedPianoTrackId, state.pianoBars, state.pianoNotes);
+      state.mels = [mel];
+      state.selectedMelId = mel.id;
+      if (mel.notes.length) {
+        const track = {
+          id: makeId(), name: mel.name, instrumentId: mel.instrumentId, color: "#b5a0ff",
+          muted: false, solo: false, clips: [{ id: makeId(), melId: mel.id, startBar: state.pianoStartBar }],
+        };
+        state.melTracks.push(track);
+      }
+    }
+    if (!state.mels.some((mel) => mel.id === state.selectedMelId)) state.selectedMelId = state.mels[0].id;
+    loadMel(state.selectedMelId);
+  }
+
+  function getMelLengthBars(mel) {
+    const noteEnd = mel.notes.reduce((latest, note) => Math.max(latest, note.startTick + note.durationTicks), 0);
+    return Math.max(1, Math.min(8, Math.max(mel.bars || 1, Math.ceil(noteEnd / PIANO_TICKS_PER_BAR))));
+  }
+
+  function renderMelOptions() {
+    const select = $("#mel-select");
+    select.replaceChildren();
+    state.mels.forEach((mel) => {
+      const option = document.createElement("option");
+      option.value = mel.id;
+      option.textContent = mel.name;
+      select.append(option);
+    });
+    select.value = state.selectedMelId || "";
+    const mel = getMel();
+    const dragSource = $("#mel-drag-source");
+    dragSource.textContent = mel ? `Drag ${mel.name} to Track View` : "No Mel selected";
+    dragSource.disabled = !mel;
+    dragSource.style.setProperty("--pattern-color", "#b5a0ff");
+  }
+
+  function selectMel(melId) {
+    captureCurrentMel();
+    loadMel(melId);
+    renderMelOptions();
+    renderPianoInstrumentOptions();
+    renderPianoRoll();
+    saveState();
+  }
+
+  function createMel() {
+    captureCurrentMel();
+    const mel = makeMel(`Mel ${state.mels.length + 1}`);
+    state.mels.push(mel);
+    loadMel(mel.id);
+    renderMelOptions();
+    renderPianoInstrumentOptions();
+    renderPianoRoll();
+    saveState();
+    showToast(`${mel.name} created`);
+  }
+
+  function renameMel() {
+    const mel = getMel();
+    if (!mel) return;
+    const value = window.prompt("Name this Mel", mel.name);
+    if (value === null) return;
+    const name = value.trim();
+    if (!name) {
+      showToast("A Mel needs a name.");
+      return;
+    }
+    if (state.mels.some((item) => item.id !== mel.id && item.name.toLowerCase() === name.toLowerCase())) {
+      showToast("Mel names must be unique.");
+      return;
+    }
+    const oldName = mel.name;
+    mel.name = name;
+    state.melTracks.forEach((track) => {
+      if (track.name === oldName && track.clips.some((clip) => clip.melId === mel.id)) track.name = name;
+    });
+    renderMelOptions();
+    renderArrangement();
+    saveState();
   }
 
   function renderPianoInstrumentOptions() {
@@ -926,7 +1041,9 @@
   }
 
   function scheduler() {
-    if (isSongWorkspace() && state.isPlaying) {
+    const arrangementPlayback = state.view === "arrangement";
+    const pianoLoopPlayback = state.view === "piano-roll";
+    if (arrangementPlayback && state.isPlaying) {
       if (state.audioContext.currentTime >= state.playbackEndTime) {
         stopPlayback();
         return;
@@ -938,25 +1055,25 @@
     const lookAhead = 0.12;
     while (
       state.nextStepTime < state.audioContext.currentTime + lookAhead &&
-      (!isSongWorkspace() || state.nextStepTime < state.playbackEndTime)
+      (!arrangementPlayback || state.nextStepTime < state.playbackEndTime)
     ) {
       const clockStep = state.stepIndex;
-      const arrangementSteps = isSongWorkspace() ? arrangementStepsAtTime(state.nextStepTime) : null;
-      const step = isSongWorkspace() ? arrangementSteps[0]?.step ?? -1 : state.stepIndex;
+      const arrangementSteps = arrangementPlayback ? arrangementStepsAtTime(state.nextStepTime) : null;
+      const step = arrangementPlayback ? arrangementSteps[0]?.step ?? -1 : state.stepIndex;
       const swingOffset = (step >= 0 ? step : clockStep) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
-      if (isSongWorkspace()) {
+      if (arrangementPlayback) {
         arrangementSteps.forEach(({ pattern, step: patternStep }) =>
           scheduleStep(patternStep, state.nextStepTime + swingOffset, pattern, false));
         if (state.metronome && (step >= 0 ? step : clockStep) % 4 === 0) {
           triggerClick(state.nextStepTime + swingOffset, (step >= 0 ? step : clockStep) % 16 === 0);
         }
-      } else {
+      } else if (state.view === "sequencer") {
         scheduleStep(state.stepIndex, state.nextStepTime + swingOffset);
       }
       state.nextStepTime += getStepDuration();
       state.stepIndex = (clockStep + 1) % state.steps;
     }
-    if (isSongWorkspace()) schedulePianoNotes(lookAhead);
+    if (pianoLoopPlayback) scheduleCurrentMelLoop(lookAhead);
   }
 
   function arrangementStepsAtTime(time) {
@@ -972,23 +1089,25 @@
     });
   }
 
-  function schedulePianoNotes(lookAhead) {
+  function scheduleCurrentMelLoop(lookAhead) {
+    const mel = getMel();
+    const instrument = getPianoTrack();
+    if (!mel || !instrument) return;
     const secondsPerBar = 240 / state.bpm;
     const now = state.audioContext.currentTime;
-    state.pianoNotes.forEach((note) => {
-      if (state.scheduledPianoNotes.has(note.id)) return;
-      const track = state.tracks.find((item) => item.id === note.trackId);
-      if (!track || track.muted || (state.tracks.some((item) => item.solo) && !track.solo)) return;
-      const noteStartBar = state.pianoStartBar + note.startTick / PIANO_TICKS_PER_BAR;
-      const noteEndBar = noteStartBar + note.durationTicks / PIANO_TICKS_PER_BAR;
-      if (noteEndBar <= state.playbackStartBar) return;
-      const audibleStartBar = Math.max(noteStartBar, state.playbackStartBar);
-      const when = state.playbackStartTime + (audibleStartBar - state.playbackStartBar) * secondsPerBar;
-      if (when < now || when >= now + lookAhead || when >= state.playbackEndTime) return;
-      const duration = Math.min(noteEndBar, state.playbackStartBar + (state.playbackEndTime - state.playbackStartTime) / secondsPerBar) - audibleStartBar;
-      if (duration <= 0) return;
-      playPianoNote(track, when, note.midi, duration * secondsPerBar, note.velocity || 0.8);
-      state.scheduledPianoNotes.add(note.id);
+    const loopSeconds = getMelLengthBars(mel) * secondsPerBar;
+    const firstLoop = Math.max(0, Math.floor((now - state.playbackStartTime) / loopSeconds));
+    mel.notes.forEach((note) => {
+      const noteOffset = note.startTick / PIANO_TICKS_PER_BAR * secondsPerBar;
+      const duration = note.durationTicks / PIANO_TICKS_PER_BAR * secondsPerBar;
+      for (let loop = firstLoop; loop <= firstLoop + 1; loop += 1) {
+        const key = `${note.id}:${loop}`;
+        if (state.scheduledPianoNotes.has(key)) continue;
+        const when = state.playbackStartTime + loop * loopSeconds + noteOffset;
+        if (when < now || when >= now + lookAhead) continue;
+        playPianoNote(instrument, when, note.midi, duration, note.velocity || 0.8);
+        state.scheduledPianoNotes.add(key);
+      }
     });
   }
 
@@ -1108,7 +1227,19 @@
     const removedIds = new Set(removedTracks.map((item) => item.id));
     removedTracks.forEach((item) => item.gainNode?.disconnect());
     state.tracks = state.tracks.filter((item) => !removedIds.has(item.id));
-    state.pianoNotes = state.pianoNotes.filter((note) => !removedIds.has(note.trackId));
+    const fallbackInstrumentId = state.tracks.find((item) => !item.sourceId)?.id || state.tracks[0]?.id || "";
+    if (removedIds.has(state.selectedPianoTrackId)) state.selectedPianoTrackId = fallbackInstrumentId;
+    state.pianoNotes = state.pianoNotes.map((note) => ({
+      ...note,
+      trackId: removedIds.has(note.trackId) ? fallbackInstrumentId : note.trackId,
+    }));
+    state.mels.forEach((mel) => {
+      if (removedIds.has(mel.instrumentId)) mel.instrumentId = fallbackInstrumentId;
+      mel.notes = mel.notes.map((note) => ({ ...note, trackId: mel.instrumentId }));
+    });
+    state.melTracks.forEach((melTrack) => {
+      if (removedIds.has(melTrack.instrumentId)) melTrack.instrumentId = fallbackInstrumentId;
+    });
     if (!state.pianoNotes.some((note) => note.id === state.selectedPianoNoteId)) state.selectedPianoNoteId = null;
     state.patterns.forEach((pattern) => {
       pattern.trackIds = getPatternTrackIds(pattern).filter((id) => !removedIds.has(id));
@@ -1119,6 +1250,9 @@
       });
     });
     renderTracks();
+    renderMelOptions();
+    renderPianoInstrumentOptions();
+    renderPianoRoll();
     if (isSongWorkspace()) renderArrangement();
     updateTrackGains();
     saveState();
@@ -1160,17 +1294,19 @@
 
   function updateArrangementLength() {
     const secondsPerBar = 240 / state.bpm;
-    const pianoEnd = state.pianoNotes.length
-      ? state.pianoStartBar + state.pianoNotes.reduce((latest, note) => Math.max(latest, note.startTick + note.durationTicks), 0) / PIANO_TICKS_PER_BAR
-      : 0;
+    const melEnd = state.melTracks.reduce((latest, track) =>
+      track.clips.reduce((end, clip) => {
+        const mel = getMel(clip.melId);
+        return mel ? Math.max(end, clip.startBar + getMelLengthBars(mel)) : end;
+      }, latest), 0);
     const clipEnd = state.arrangementTracks.reduce((latest, track) => {
       return track.clips.reduce((end, clip) => Math.max(end, clip.startBar + clip.buffer.duration / secondsPerBar), latest);
     }, state.patternClips.reduce((end, clip) => {
       const pattern = getPattern(clip.patternId);
       return pattern ? Math.max(end, clip.startBar + pattern.steps / 16 * (clip.repeatCount || 1)) : end;
-    }, Math.max(8, pianoEnd)));
+    }, Math.max(32, melEnd)));
     state.arrangementBars = Math.min(MAX_ARRANGEMENT_BARS, Math.max(state.arrangementBars, Math.ceil(clipEnd)));
-    if (state.playbackStartTime && state.isPlaying && isSongWorkspace()) {
+    if (state.playbackStartTime && state.isPlaying && state.view === "arrangement") {
       state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - state.playbackStartBar) * secondsPerBar;
     }
     $("#arrangement-bar-label").textContent = `${state.arrangementBars} BARS`;
@@ -1178,7 +1314,7 @@
 
   function renderArrangement() {
     $("#arrangement-empty").hidden = state.view !== "arrangement";
-    $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.patternClips.length + (state.pianoNotes.length ? 1 : 0));
+    $("#arrangement-tab-count").textContent = String(state.arrangementTracks.length + state.melTracks.length + state.patternClips.length);
     renderPatternSelectors();
     renderInstrumentBrowser();
     renderRecordingBrowser();
@@ -1220,24 +1356,19 @@
       content.append(lane);
     });
 
-    if (state.pianoNotes.length) {
+    state.melTracks.forEach((track) => {
       const label = document.createElement("div");
       label.className = "arrangement-label";
-      label.style.setProperty("--track-color", "#b5a0ff");
-      label.innerHTML = '<span class="track-color"></span><div class="arrangement-label-info"><div class="arrangement-label-name">Piano Roll</div><div class="arrangement-label-type"></div></div>';
-      label.querySelector(".arrangement-label-type").textContent = `${state.pianoNotes.length} MIDI notes`;
+      label.style.setProperty("--track-color", track.color);
+      label.innerHTML = '<span class="track-color"></span><div class="arrangement-label-info"><div class="arrangement-label-name"></div><div class="arrangement-label-type"></div></div>';
+      label.querySelector(".arrangement-label-name").textContent = track.name;
+      const instrument = getPianoTrack(track.instrumentId);
+      label.querySelector(".arrangement-label-type").textContent = `Mel · ${instrument?.name || "Instrument"}`;
       labels.append(label);
-      const lane = createTimelineLane("piano-roll", width);
-      const midiClip = document.createElement("div");
-      midiClip.className = "midi-arrangement-clip";
-      midiClip.style.left = `${state.pianoStartBar * BAR_WIDTH + 4}px`;
-      const latestStep = state.pianoNotes.reduce((latest, note) => Math.max(latest, note.startTick + note.durationTicks), 0);
-      const clipBars = Math.max(1 / PIANO_TICKS_PER_BAR, latestStep / PIANO_TICKS_PER_BAR);
-      midiClip.style.width = `${Math.max(28, clipBars * BAR_WIDTH - 8)}px`;
-      midiClip.textContent = `PIANO ROLL · ${state.pianoNotes.length} NOTES`;
-      lane.append(midiClip);
+      const lane = createTimelineLane(`mel:${track.id}`, width);
+      track.clips.forEach((clip) => lane.append(createMelClipElement(track, clip)));
       content.append(lane);
-    }
+    });
 
     state.arrangementTracks.forEach((track) => {
       const label = document.createElement("div");
@@ -1295,7 +1426,17 @@
       track.clips.forEach((clip) => lane.append(createAudioClip(track, clip)));
       content.append(lane);
     });
-    $("#arrangement-track-count").textContent = String(patternTracks.length + state.arrangementTracks.length + (state.pianoNotes.length ? 1 : 0)).padStart(2, "0");
+    const dropLabel = document.createElement("div");
+    dropLabel.className = "arrangement-label mel-drop-label";
+    dropLabel.textContent = "Drop Mel for a new track";
+    labels.append(dropLabel);
+    const melDropLane = createTimelineLane("new-mel-track", width);
+    melDropLane.classList.add("mel-new-track-lane");
+    const dropHint = document.createElement("span");
+    dropHint.textContent = "DROP MEL HERE TO CREATE TRACK";
+    melDropLane.append(dropHint);
+    content.append(melDropLane);
+    $("#arrangement-track-count").textContent = String(patternTracks.length + state.melTracks.length + state.arrangementTracks.length).padStart(2, "0");
     updateArrangementCursorMarker();
   }
 
@@ -1374,6 +1515,82 @@
     showToast("Drum pattern added to the arrangement");
   }
 
+  function addMelTrack(melId, startBar) {
+    const mel = getMel(melId);
+    if (!mel) return;
+    const track = {
+      id: makeId(),
+      name: mel.name,
+      instrumentId: mel.instrumentId,
+      color: TRACK_COLORS[state.melTracks.length % TRACK_COLORS.length],
+      muted: false,
+      solo: false,
+      clips: [],
+    };
+    state.melTracks.push(track);
+    addMelClip(mel.id, track.id, startBar);
+  }
+
+  function addMelClip(melId, trackId, startBar) {
+    const mel = getMel(melId);
+    const track = state.melTracks.find((item) => item.id === trackId);
+    if (!mel || !track) return;
+    const length = getMelLengthBars(mel);
+    track.clips.push({
+      id: makeId(),
+      melId,
+      startBar: Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - length, Math.floor(startBar))),
+    });
+    track.clips.sort((left, right) => left.startBar - right.startBar);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+    showToast(`${mel.name} added to Track View`);
+  }
+
+  function moveMelClip(clipId, sourceTrackId, destinationTrackId, startBar) {
+    const source = state.melTracks.find((track) => track.id === sourceTrackId);
+    const destination = state.melTracks.find((track) => track.id === destinationTrackId);
+    const clipIndex = source?.clips.findIndex((clip) => clip.id === clipId) ?? -1;
+    const clip = clipIndex >= 0 ? source.clips[clipIndex] : null;
+    const mel = clip ? getMel(clip.melId) : null;
+    if (!source || !destination || !clip || !mel) return;
+    if (source !== destination) source.clips.splice(clipIndex, 1);
+    clip.startBar = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - getMelLengthBars(mel), Math.floor(startBar)));
+    if (source !== destination) destination.clips.push(clip);
+    destination.clips.sort((left, right) => left.startBar - right.startBar);
+    if (source !== destination && !source.clips.length) state.melTracks = state.melTracks.filter((item) => item !== source);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
+  function moveMelClipToNewTrack(clipId, sourceTrackId, startBar) {
+    const source = state.melTracks.find((track) => track.id === sourceTrackId);
+    const clip = source?.clips.find((item) => item.id === clipId);
+    const mel = clip ? getMel(clip.melId) : null;
+    if (!source || !clip || !mel) return;
+    const destination = {
+      ...source,
+      id: makeId(),
+      name: mel.name,
+      instrumentId: mel.instrumentId,
+      clips: [],
+    };
+    state.melTracks.push(destination);
+    moveMelClip(clip.id, source.id, destination.id, startBar);
+  }
+
+  function removeMelClip(trackId, clipId) {
+    const track = state.melTracks.find((item) => item.id === trackId);
+    if (!track) return;
+    track.clips = track.clips.filter((clip) => clip.id !== clipId);
+    if (!track.clips.length) state.melTracks = state.melTracks.filter((item) => item !== track);
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+  }
+
   function movePatternClip(clipId, startBar) {
     const clip = state.patternClips.find((item) => item.id === clipId);
     if (!clip) return;
@@ -1420,7 +1637,8 @@
       lane.classList.add("is-drop-target");
       if (event.dataTransfer) {
         const isPatternSource = Array.from(event.dataTransfer.types || []).includes("application/x-pulsegrid-pattern-source");
-        event.dataTransfer.dropEffect = event.dataTransfer.files.length || isPatternSource ? "copy" : "move";
+        const isMelSource = Array.from(event.dataTransfer.types || []).includes("application/x-pulsegrid-mel-source");
+        event.dataTransfer.dropEffect = event.dataTransfer.files.length || isPatternSource || isMelSource ? "copy" : "move";
       }
     });
     lane.addEventListener("dragleave", (event) => {
@@ -1434,6 +1652,28 @@
       const files = Array.from(event.dataTransfer?.files || []);
       if (files.length) {
         for (const file of files) await importRecording(file, isPatternLane ? null : trackId, startBar);
+        return;
+      }
+      const melSource = event.dataTransfer?.getData("application/x-pulsegrid-mel-source");
+      if (melSource) {
+        try {
+          const { melId } = JSON.parse(melSource);
+          if (trackId.startsWith("mel:")) addMelClip(melId, trackId.slice(4), startBar);
+          else addMelTrack(melId, startBar);
+        } catch {
+          showToast("That Mel could not be added.");
+        }
+        return;
+      }
+      const melClipTransfer = event.dataTransfer?.getData("application/x-pulsegrid-mel-clip");
+      if (melClipTransfer) {
+        try {
+          const { clipId, sourceTrackId } = JSON.parse(melClipTransfer);
+          if (trackId.startsWith("mel:")) moveMelClip(clipId, sourceTrackId, trackId.slice(4), startBar);
+          else moveMelClipToNewTrack(clipId, sourceTrackId, startBar);
+        } catch {
+          showToast("That Mel clip could not be moved.");
+        }
         return;
       }
       if (isPatternLane) {
@@ -1523,6 +1763,41 @@
       setArrangementCursor(clip.startBar);
     });
     element.append(waveform, name, remove);
+    return element;
+  }
+
+  function createMelClipElement(track, clip) {
+    const mel = getMel(clip.melId);
+    if (!mel) return document.createElement("div");
+    const bars = getMelLengthBars(mel);
+    const element = document.createElement("div");
+    element.className = "mel-arrangement-clip";
+    element.draggable = true;
+    element.dataset.clipId = clip.id;
+    element.style.setProperty("--clip-color", track.color);
+    element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
+    element.style.width = `${Math.max(28, bars * BAR_WIDTH - 8)}px`;
+    element.textContent = `${mel.name.toUpperCase()} · ${bars} BAR${bars === 1 ? "" : "S"}`;
+    element.setAttribute("aria-label", `${mel.name}, bar ${clip.startBar + 1}; drag to move`);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "mel-clip-remove";
+    remove.textContent = "×";
+    remove.title = "Remove Mel clip";
+    remove.setAttribute("aria-label", `Remove ${mel.name}`);
+    remove.addEventListener("click", (event) => {
+      event.stopPropagation();
+      removeMelClip(track.id, clip.id);
+    });
+    element.addEventListener("dragstart", (event) => {
+      event.dataTransfer?.setData("application/x-pulsegrid-mel-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+    });
+    element.addEventListener("click", (event) => {
+      if (event.target.closest(".mel-clip-remove")) return;
+      setArrangementCursor(clip.startBar);
+    });
+    element.append(remove);
     return element;
   }
 
@@ -1644,7 +1919,7 @@
       renderPatternSelectors();
     }
     if (showPianoRoll) {
-      if (!state.pianoNotes.length) state.pianoStartBar = state.arrangementCursor;
+      renderMelOptions();
       renderPianoInstrumentOptions();
       renderPianoRoll();
     }
@@ -2278,15 +2553,18 @@
     try {
       await ensureAudio();
       state.isPlaying = true;
-      const startBar = isSongWorkspace() ? Math.min(state.arrangementCursor, state.arrangementBars - 1) : 0;
+      const arrangementPlayback = state.view === "arrangement";
+      const startBar = arrangementPlayback ? Math.min(state.arrangementCursor, state.arrangementBars - 1) : 0;
       state.playbackStartBar = startBar;
       state.playbackStartTime = state.audioContext.currentTime + 0.04;
-      state.playbackEndTime = state.playbackStartTime + (state.arrangementBars - startBar) * (240 / state.bpm);
-      state.stepIndex = isSongWorkspace() ? Math.floor(startBar * 16) % state.steps : 0;
+      state.playbackEndTime = arrangementPlayback
+        ? state.playbackStartTime + (state.arrangementBars - startBar) * (240 / state.bpm)
+        : Infinity;
+      state.stepIndex = arrangementPlayback ? Math.floor(startBar * 16) % state.steps : 0;
       state.scheduledPianoNotes.clear();
       state.nextStepTime = state.playbackStartTime;
       updateTrackGains();
-      if (isSongWorkspace()) scheduleArrangementClips(state.playbackStartTime, startBar);
+      if (arrangementPlayback) scheduleArrangementClips(state.playbackStartTime, startBar);
       scheduler();
       state.schedulerId = window.setInterval(scheduler, 25);
       playButton.classList.add("is-playing");
@@ -2314,6 +2592,32 @@
         state.arrangementSources.add(source);
       });
     });
+    const hasMelSolo = state.melTracks.some((track) => track.solo);
+    const hasInstrumentSolo = state.tracks.some((track) => track.solo);
+    state.melTracks.forEach((melTrack) => {
+      const instrument = getPianoTrack(melTrack.instrumentId);
+      if (!instrument || melTrack.muted || (hasMelSolo && !melTrack.solo) ||
+        instrument.muted || (hasInstrumentSolo && !instrument.solo)) return;
+      melTrack.clips.forEach((clip) => {
+        const mel = getMel(clip.melId);
+        if (!mel) return;
+        const clipEndBar = clip.startBar + getMelLengthBars(mel);
+        mel.notes.forEach((note) => {
+          const key = `${melTrack.id}:${clip.id}:${note.id}`;
+          if (state.scheduledPianoNotes.has(key)) return;
+          const noteStartBar = clip.startBar + note.startTick / PIANO_TICKS_PER_BAR;
+          const noteEndBar = Math.min(clipEndBar, noteStartBar + note.durationTicks / PIANO_TICKS_PER_BAR);
+          if (noteEndBar <= startBar) return;
+          const audibleStartBar = Math.max(startBar, noteStartBar);
+          const when = startTime + (audibleStartBar - startBar) * secondsPerBar;
+          const duration = Math.max(0, noteEndBar - audibleStartBar) * secondsPerBar;
+          if (duration > 0) {
+            playPianoNote(instrument, when, note.midi, duration, note.velocity || 0.8);
+            state.scheduledPianoNotes.add(key);
+          }
+        });
+      });
+    });
   }
 
   function stopPlayback() {
@@ -2327,7 +2631,7 @@
       try { source.stop(); } catch { /* The source may have ended between scheduler ticks. */ }
     });
     state.arrangementSources.clear();
-    if (isSongWorkspace()) state.arrangementCursor = 0;
+    if (state.view === "arrangement") state.arrangementCursor = 0;
     if (state.audioContext) {
       const now = state.audioContext.currentTime;
       state.tracks.forEach((track) => {
@@ -2388,6 +2692,7 @@
 
   function saveState() {
     captureCurrentPattern();
+    captureCurrentMel();
     const saveDot = $(".save-dot");
     $("#save-state").textContent = "Saving…";
     saveDot.style.background = "#c8a95a";
@@ -2419,6 +2724,23 @@
         solo: track.solo,
         variant: track.variant,
         sampleName: track.sample?.name || null,
+      })),
+      mels: state.mels.map((mel) => ({
+        id: mel.id,
+        name: mel.name,
+        instrumentId: mel.instrumentId,
+        bars: mel.bars,
+        notes: mel.notes.map((note) => ({ ...note })),
+      })),
+      selectedMelId: state.selectedMelId,
+      melTracks: state.melTracks.map((track) => ({
+        id: track.id,
+        name: track.name,
+        instrumentId: track.instrumentId,
+        color: track.color,
+        muted: track.muted,
+        solo: track.solo,
+        clips: track.clips.map((clip) => ({ ...clip })),
       })),
       patternClips: state.patternClips.map(({ id, patternId, startBar, repeatCount }) => ({ id, patternId, startBar, repeatCount: repeatCount || 1 })),
       pianoNotes: state.pianoNotes.map((note) => ({ ...note })),
@@ -2454,7 +2776,7 @@
       if (Number.isFinite(saved.bpm)) state.bpm = Math.max(60, Math.min(180, Math.round(saved.bpm)));
       if (Number.isFinite(saved.swing)) state.swing = Math.max(0, Math.min(45, Math.round(saved.swing)));
       if (saved.steps === 16 || saved.steps === 32) state.steps = saved.steps;
-      if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(8, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
+      if (Number.isFinite(saved.arrangementBars)) state.arrangementBars = Math.max(32, Math.min(MAX_ARRANGEMENT_BARS, Math.round(saved.arrangementBars)));
       if (Number.isFinite(saved.arrangementCursor)) state.arrangementCursor = Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - 1, saved.arrangementCursor));
       if (Number.isFinite(saved.workspaceRatio)) state.workspaceRatio = Math.max(20, Math.min(80, Math.round(saved.workspaceRatio)));
       if (typeof saved.workspaceHidden === "boolean") state.workspaceHidden = saved.workspaceHidden;
@@ -2584,6 +2906,62 @@
             };
           });
       }
+      if (Array.isArray(saved.mels)) {
+        state.mels = saved.mels
+          .filter((mel) => typeof mel?.id === "string" && typeof mel.name === "string")
+          .map((mel) => {
+            const instrumentId = state.tracks.some((track) => track.id === mel.instrumentId)
+              ? mel.instrumentId
+              : state.tracks.find((track) => track.id === "piano-grand")?.id || state.tracks[0]?.id || "";
+            const notes = Array.isArray(mel.notes) ? mel.notes
+              .filter((note) => note && typeof note.id === "string" && Number.isInteger(note.startTick) &&
+                Number.isInteger(note.durationTicks) && Number.isInteger(note.midi))
+              .slice(0, 4096)
+              .map((note) => {
+                const startTick = Math.max(0, Math.min(8 * PIANO_TICKS_PER_BAR - 1, note.startTick));
+                return {
+                  id: note.id,
+                  trackId: instrumentId,
+                  midi: Math.max(PIANO_BOTTOM_MIDI, Math.min(PIANO_TOP_MIDI, note.midi)),
+                  startTick,
+                  durationTicks: Math.max(1, Math.min(8 * PIANO_TICKS_PER_BAR - startTick, note.durationTicks)),
+                  velocity: Number.isFinite(note.velocity) ? Math.max(0.1, Math.min(1, note.velocity)) : 0.8,
+                };
+              })
+              : [];
+            return {
+              id: mel.id,
+              name: mel.name.trim() || "Mel",
+              instrumentId,
+              bars: [1, 2, 4, 8].includes(mel.bars) ? mel.bars : 4,
+              notes,
+            };
+          });
+      }
+      if (Array.isArray(saved.melTracks)) {
+        const fallbackInstrumentId = state.tracks.find((item) => item.id === "piano-grand")?.id || state.tracks[0]?.id || "";
+        state.melTracks = saved.melTracks
+          .filter((track) => typeof track?.id === "string" && typeof track.name === "string" && Array.isArray(track.clips))
+          .map((track) => ({
+            id: track.id,
+            name: track.name,
+            instrumentId: state.tracks.some((item) => item.id === track.instrumentId) ? track.instrumentId : fallbackInstrumentId,
+            color: isPatternColor(track.color) ? track.color : "#b5a0ff",
+            muted: track.muted === true,
+            solo: track.solo === true,
+            clips: track.clips
+              .filter((clip) => typeof clip?.id === "string" && state.mels.some((mel) => mel.id === clip.melId) && Number.isFinite(clip.startBar))
+              .map((clip) => {
+                const mel = getMel(clip.melId);
+                return {
+                  id: clip.id,
+                  melId: clip.melId,
+                  startBar: Math.max(0, Math.min(MAX_ARRANGEMENT_BARS - (mel ? getMelLengthBars(mel) : 1), Math.floor(clip.startBar))),
+                };
+              }),
+          }));
+      }
+      if (typeof saved.selectedMelId === "string") state.selectedMelId = saved.selectedMelId;
     } catch {
       try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be disabled. */ }
     }
@@ -2691,13 +3069,24 @@
           });
         }
       });
-      state.pianoNotes.forEach((note) => {
-        const track = state.tracks.find((item) => item.id === note.trackId);
-        if (!track || track.muted || (hasSolo && !track.solo)) return;
-        const startTime = (state.pianoStartBar + note.startTick / PIANO_TICKS_PER_BAR) * secondsPerBar;
-        if (startTime >= duration) return;
-        const noteDuration = Math.min(note.durationTicks / PIANO_TICKS_PER_BAR * secondsPerBar, duration - startTime);
-        if (noteDuration > 0) playPianoNote(track, startTime, note.midi, noteDuration, note.velocity || 0.8);
+      const hasMelSolo = state.melTracks.some((track) => track.solo);
+      state.melTracks.forEach((melTrack) => {
+        const instrument = state.tracks.find((track) => track.id === melTrack.instrumentId);
+        if (!instrument || melTrack.muted || (hasMelSolo && !melTrack.solo) ||
+          instrument.muted || (hasSolo && !instrument.solo)) return;
+        melTrack.clips.forEach((clip) => {
+          const mel = getMel(clip.melId);
+          if (!mel) return;
+          const clipEnd = clip.startBar + getMelLengthBars(mel);
+          mel.notes.forEach((note) => {
+            const startBar = clip.startBar + note.startTick / PIANO_TICKS_PER_BAR;
+            if (startBar >= duration / secondsPerBar || startBar >= clipEnd) return;
+            const endBar = Math.min(clipEnd, startBar + note.durationTicks / PIANO_TICKS_PER_BAR);
+            const startTime = startBar * secondsPerBar;
+            const noteDuration = Math.min((endBar - startBar) * secondsPerBar, duration - startTime);
+            if (noteDuration > 0) playPianoNote(instrument, startTime, note.midi, noteDuration, note.velocity || 0.8);
+          });
+        });
       });
       if (state.metronome) {
         for (let step = 0; step < Math.ceil(duration / stepDuration); step += 4) {
@@ -2879,8 +3268,19 @@
     });
     $("#open-beat-grid-button").addEventListener("click", () => setWorkspaceView(state.view === "sequencer" && !state.workspaceHidden ? "arrangement" : "sequencer"));
     $("#open-piano-roll-button").addEventListener("click", () => setWorkspaceView(state.view === "piano-roll" && !state.workspaceHidden ? "arrangement" : "piano-roll"));
+    $("#mel-select").addEventListener("change", (event) => selectMel(event.target.value));
+    $("#new-mel-button").addEventListener("click", createMel);
+    $("#rename-mel-button").addEventListener("click", renameMel);
+    $("#mel-drag-source").addEventListener("dragstart", (event) => {
+      const mel = getMel();
+      if (!mel || !event.dataTransfer) return;
+      event.dataTransfer.setData("application/x-pulsegrid-mel-source", JSON.stringify({ melId: mel.id }));
+      event.dataTransfer.effectAllowed = "copy";
+    });
     $("#piano-instrument-select").addEventListener("change", (event) => {
       state.selectedPianoTrackId = event.target.value;
+      state.pianoNotes = state.pianoNotes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
+      renderPianoRoll();
       saveState();
     });
     $("#piano-snap-select").addEventListener("change", (event) => {
@@ -2907,7 +3307,6 @@
       state.pianoNotes = [];
       state.selectedPianoNoteId = null;
       state.scheduledPianoNotes.clear();
-      state.pianoStartBar = state.arrangementCursor;
       renderPianoRoll();
       updateArrangementLength();
       renderArrangement();
@@ -2968,19 +3367,16 @@
     });
     $("#record-audio-button").addEventListener("click", toggleAudioRecording);
     $("#arrangement-clear-button").addEventListener("click", () => {
-      if (!state.arrangementTracks.length && !state.patternClips.length && !state.pianoNotes.length) return;
+      if (!state.arrangementTracks.length && !state.patternClips.length && !state.melTracks.length) return;
       if (!window.confirm("Remove all clips from this arrangement?")) return;
       state.arrangementTracks.forEach((track) => track.clips.forEach((clip) => deletePersistedClip(clip.id)));
       state.arrangementTracks = [];
       state.patternClips = [];
-      state.pianoNotes = [];
-      state.selectedPianoNoteId = null;
+      state.melTracks = [];
       state.scheduledPianoNotes.clear();
-      state.arrangementBars = 8;
+      state.arrangementBars = 32;
       state.arrangementCursor = 0;
-      state.pianoStartBar = 0;
       renderArrangement();
-      renderPianoRoll();
       saveState();
       showToast("Arrangement cleared");
     });
@@ -3007,6 +3403,9 @@
       state.selectedPatternId = state.patterns[0].id;
       renderPatternSelectors();
       state.patternClips = [];
+      state.mels = [];
+      state.selectedMelId = "";
+      state.melTracks = [];
       state.pianoNotes = [];
       state.pianoStartBar = 0;
       state.pianoBars = 4;
@@ -3014,6 +3413,8 @@
       state.pianoNoteLength = 2;
       state.selectedPianoTrackId = "piano-grand";
       state.selectedPianoNoteId = null;
+      state.arrangementBars = 32;
+      state.arrangementCursor = 0;
       state.workspaceRatio = 50;
       state.workspaceHidden = false;
       state.trackViewHidden = false;
@@ -3025,6 +3426,8 @@
       swingSlider.value = "0";
       $("#swing-value").textContent = "0%";
       swingSlider.style.setProperty("--range-progress", "0%");
+      ensureMels();
+      renderMelOptions();
       setLength(16);
       loadPreset(PRESETS[0]);
       renderPianoInstrumentOptions();
@@ -3053,6 +3456,7 @@
     state.patterns = [initialPattern];
     state.selectedPatternId = initialPattern.id;
     restoreState();
+    ensureMels();
     tempoValue.textContent = String(state.bpm);
     swingSlider.value = String(state.swing);
     $("#swing-value").textContent = `${state.swing}%`;
@@ -3066,6 +3470,7 @@
     setLength(state.steps);
     renderTracks();
     renderArrangement();
+    renderMelOptions();
     state.arrangementCursor = Math.min(state.arrangementCursor, state.arrangementBars - 1);
     setWorkspaceView(state.view, true);
     bindEvents();

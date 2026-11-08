@@ -26,9 +26,9 @@
         </button>
         <div class="save-state"><span class="save-dot"></span><span id="save-state">All changes saved</span></div>
         <div class="topbar-actions">
-          <button class="quiet-button workspace-open-button" id="open-beat-grid-button" type="button" aria-label="Open Beat Grid" title="Open Beat Grid">
+          <button class="quiet-button workspace-open-button" id="open-beat-grid-button" type="button" aria-label="Open Step" title="Open Step">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h3v3H3zm5.5 0h3v3h-3zm5.5 0h3v3h-3zM3 9h3v3H3zm5.5 0h3v3h-3zm5.5 0h3v3h-3zM3 14h3v3H3zm5.5 0h3v3h-3zm5.5 0h3v3h-3z" /></svg>
-            <span>Beat Grid</span>
+            <span>Step</span>
           </button>
           <button class="quiet-button workspace-open-button" id="open-piano-roll-button" type="button" aria-label="Open Piano Roll" title="Open Piano Roll">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14v12H3zM6 4v7m4-7v7m4-7v7M6 11h2v5m4-5h2v5" /></svg>
@@ -82,7 +82,7 @@
         <div class="workspace-tabs" role="tablist" aria-label="Workspace">
           <button class="workspace-tab" id="sequencer-tab" type="button" role="tab" aria-selected="false" aria-controls="sequencer-view">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5h2v2H3zm6 0h2v2H9zm6 0h2v2h-2zM3 11h2v2H3zm6 0h2v2H9zm6 0h2v2h-2z" /></svg>
-            Beat grid
+            Step
           </button>
           <button class="workspace-tab is-selected" id="arrangement-tab" type="button" role="tab" aria-selected="true" aria-controls="arrangement-view">
             <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 4h14M3 8h9M3 12h14M3 16h9" /><path d="M14 6v4m-2-2h4M10 14v4m-2-2h4" /></svg>
@@ -157,9 +157,7 @@
                     <section class="workspace workspace-tool-panel" id="sequencer-view" role="tabpanel" aria-labelledby="sequencer-tab" hidden>
                       <div class="section-heading">
                         <div>
-                          <div class="eyebrow">STEP SEQUENCER <span class="heading-dot"></span> <span id="bar-label">1 BAR</span></div>
-                          <h1>Build your groove<span class="heading-period">.</span></h1>
-                          <p class="section-subtitle">Click a step to add a hit. Press play and make it move.</p>
+                          <div class="eyebrow">STEP <span class="heading-dot"></span> <span id="bar-label">1 BAR</span></div>
                         </div>
                         <div class="sequencer-actions">
                           <label class="pattern-select-control">
@@ -213,6 +211,13 @@
                     <section class="piano-roll-view" id="piano-roll-view" role="tabpanel" aria-labelledby="piano-roll-tab" hidden>
                       <div class="piano-roll-toolbar">
                         <label class="pattern-select-control">
+                          <span>MEL</span>
+                          <select id="mel-select" aria-label="Select a Mel"></select>
+                        </label>
+                        <button class="quiet-button" id="new-mel-button" type="button">＋ New Mel</button>
+                        <button class="quiet-button" id="rename-mel-button" type="button">Rename</button>
+                        <button class="quiet-button pattern-drag-source" id="mel-drag-source" type="button" draggable="true">Drag Mel to Track View</button>
+                        <label class="pattern-select-control">
                           <span>INSTRUMENT</span>
                           <select id="piano-instrument-select" aria-label="Piano roll instrument"></select>
                         </label>
@@ -264,7 +269,7 @@
                     <span>TRACK VIEW</span>
                     <div class="track-view-controls">
                       <button class="quiet-button" id="show-workspace-button" type="button" hidden>Show Workspace</button>
-                      <span class="arrangement-bar-label" id="arrangement-bar-label">8 BARS</span>
+                      <span class="arrangement-bar-label" id="arrangement-bar-label">32 BARS</span>
                       <button class="quiet-button" id="add-bars-button" type="button">+ 4 BARS</button>
                       <button class="quiet-button" id="hide-track-view-button" type="button">Hide</button>
                     </div>
@@ -283,7 +288,7 @@
               </div>
             </div>
             <div class="arrangement-footer">
-              <span><span class="legend-swatch"></span>DRUM PATTERN <span class="audio-legend"></span>AUDIO CLIP</span>
+              <span><span class="legend-swatch"></span>DRUM PATTERN <span class="audio-legend"></span>AUDIO CLIP <span class="mel-legend"></span>MEL</span>
               <span><kbd>CLICK</kbd> add <span class="hint-divider">·</span> <kbd>DRAG</kbd> move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
             </div>
           </div>
@@ -312,7 +317,7 @@
           <h2>Your first groove</h2>
           <p>Click squares to switch drum hits on or off. Press <kbd>Space</kbd> to play, then change the tempo or swing while it runs.</p>
           <p>Use the <strong>+</strong> next to a drum to replace its sample, or open <strong>Browser → Import drum sounds</strong> to add multiple samples as new sequencer tracks.</p>
-          <p>Use the top-bar <strong>Beat Grid</strong> and <strong>Piano Roll</strong> buttons to open either editor in the workspace. In the piano roll, choose an instrument, click to add notes, and drag notes or their edges to edit them.</p>
+          <p>Use the top-bar <strong>Step</strong> and <strong>Piano Roll</strong> buttons to open either editor in the workspace. In the piano roll, choose an instrument, click to add notes, and drag notes or their edges to edit them.</p>
           <p>Open <strong>Arrangement</strong> to add vocal takes or loops on separate tracks. Drag clips to line them up with your beat; playback combines all tracks at the project tempo.</p>
           <p>Patterns and imported recordings are saved in this browser. Export a full arrangement as WAV or download the drum pattern as JSON.</p>
         </form>
