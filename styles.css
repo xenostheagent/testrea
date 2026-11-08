@@ -129,9 +129,6 @@ h1 { margin: 9px 0 4px; font-size: 28px; font-weight: 600; letter-spacing: -1.05
 .track-subtitle.has-sample { overflow: hidden; color: var(--accent); text-overflow: ellipsis; white-space: nowrap; }
 .sound-variant { display: block; width: min(100%, 112px); min-width: 0; height: 18px; margin-top: 3px; overflow: hidden; border: 1px solid #35363a; border-radius: 4px; background: #222327; padding: 0 4px; color: #a7a8ad; font-size: 8px; text-overflow: ellipsis; }
 .sound-variant:focus-visible { outline-offset: 1px; }
-.note-length-control { display: flex; align-items: center; gap: 4px; margin-top: 3px; }
-.note-length-control > span { color: #717278; font-family: var(--mono); font-size: 7px; }
-.note-length-select { width: 52px; height: 17px; border: 1px solid #35363a; border-radius: 4px; background: #222327; padding: 0 3px; color: #a7a8ad; font-family: var(--mono); font-size: 8px; }
 .track-controls { display: flex; align-items: center; gap: 4px; margin-left: 7px; }
 .track-icon-button { display: grid; place-items: center; width: 23px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: #72737a; cursor: pointer; }
 .track-icon-button:hover { border-color: var(--stroke); color: #d7d7d3; }
@@ -369,9 +366,6 @@ kbd { border: 1px solid #393a3f; border-radius: 3px; padding: 2px 4px; color: #b
   .track-name { font-size: 10px; }
   .track-subtitle { font-size: 8px; }
   .track-info > .sound-variant { display: none; }
-  .note-length-control { margin-top: 2px; }
-  .note-length-control > span { display: none; }
-  .note-length-select { width: 44px; }
   .track-controls { gap: 0; margin-left: 2px; }
   .track-icon-button { width: 18px; }
   .track-icon-button svg { width: 12px; }

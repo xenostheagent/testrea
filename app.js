@@ -187,6 +187,16 @@
     return state.patterns.find((pattern) => pattern.id === patternId) || null;
   }
 
+  function getPatternNoteLength(pattern) {
+    if (NOTE_LENGTHS.includes(pattern?.noteLength)) return pattern.noteLength;
+    const counts = Object.fromEntries(NOTE_LENGTHS.map((length) => [length, 0]));
+    Object.values(pattern?.noteLengths || {}).forEach((length) => {
+      if (NOTE_LENGTHS.includes(length)) counts[length] += 1;
+    });
+    return NOTE_LENGTHS.reduce((selected, length) =>
+      counts[length] > counts[selected] ? length : selected, "1/16");
+  }
+
   function isSongWorkspace() {
     return state.view === "arrangement" || state.view === "piano-roll";
   }
@@ -238,13 +248,20 @@
   function makePatternSnapshot(id, name, color = getPatternColor(state.patterns.length)) {
     const cells = {};
     const variants = {};
-    const noteLengths = {};
     state.tracks.forEach((track) => {
       cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) variants[track.id] = track.variant || "classic";
-      noteLengths[track.id] = "1/16";
     });
-    return { id, name, color, steps: state.steps, trackIds: state.tracks.filter((track) => !track.libraryOnly).map((track) => track.id), cells, variants, noteLengths };
+    return {
+      id,
+      name,
+      color,
+      steps: state.steps,
+      trackIds: state.tracks.filter((track) => !track.libraryOnly).map((track) => track.id),
+      cells,
+      variants,
+      noteLength: "1/16",
+    };
   }
 
   function captureCurrentPattern() {
@@ -252,15 +269,13 @@
     if (!pattern) return;
     pattern.steps = state.steps;
     const trackIds = getPatternTrackIds(pattern).filter((id) => state.tracks.some((track) => track.id === id));
-    const savedNoteLengths = pattern.noteLengths || {};
     pattern.trackIds = trackIds;
     pattern.cells = {};
     pattern.variants = {};
-    pattern.noteLengths = {};
+    pattern.noteLength = getPatternNoteLength(pattern);
     state.tracks.filter((track) => trackIds.includes(track.id)).forEach((track) => {
       pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
-      pattern.noteLengths[track.id] = NOTE_LENGTHS.includes(savedNoteLengths[track.id]) ? savedNoteLengths[track.id] : "1/16";
     });
   }
 
@@ -284,6 +299,7 @@
       button.classList.toggle("is-selected", selected);
       button.setAttribute("aria-pressed", String(selected));
     });
+    $("#step-note-length-select").value = getPatternNoteLength(pattern);
     renderHeader();
   }
 
@@ -303,6 +319,7 @@
     dragSource.textContent = selected ? `Drag ${selected.name} to timeline` : "No pattern selected";
     dragSource.disabled = !selected;
     dragSource.style.setProperty("--pattern-color", selected?.color || "var(--accent)");
+    $("#step-note-length-select").value = getPatternNoteLength(selected);
     renderPatternInstrumentOptions();
   }
 
@@ -647,7 +664,6 @@
     pattern.trackIds.push(track.id);
     pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
     if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
-    pattern.noteLengths[track.id] = "1/16";
     renderTracks();
     renderPatternSelectors();
     saveState();
@@ -661,7 +677,6 @@
     pattern.trackIds = getPatternTrackIds(pattern).filter((id) => id !== track.id);
     delete pattern.cells[track.id];
     delete pattern.variants[track.id];
-    delete pattern.noteLengths[track.id];
     track.cells = Array(STEP_COUNT).fill(false);
     track.solo = false;
     if (track.sourceId && !state.patterns.some((item) => item.id !== pattern.id && getPatternTrackIds(item).includes(track.id))) {
@@ -706,7 +721,7 @@
       trackIds: [...getPatternTrackIds(source)],
       cells: Object.fromEntries(Object.entries(source.cells).map(([trackId, cells]) => [trackId, [...cells]])),
       variants: { ...source.variants },
-      noteLengths: { ...source.noteLengths },
+      noteLength: getPatternNoteLength(source),
     };
     state.patterns.push(pattern);
     applyPattern(pattern);
@@ -781,13 +796,6 @@
       info.append(name, subtitle);
       const soundSelect = makeSoundSelect(track);
       if (soundSelect) info.append(soundSelect);
-      const noteLengthControl = document.createElement("label");
-      noteLengthControl.className = "note-length-control";
-      const noteLengthLabel = document.createElement("span");
-      noteLengthLabel.textContent = "LEN";
-      noteLengthControl.append(noteLengthLabel, makeNoteLengthSelect(track, getPattern()));
-      info.append(noteLengthControl);
-
       const controls = document.createElement("div");
       controls.className = "track-controls";
       controls.append(
@@ -860,27 +868,6 @@
       saveState();
       renderTracks();
       if (isSongWorkspace()) renderArrangement();
-    });
-    return select;
-  }
-
-  function makeNoteLengthSelect(track, pattern) {
-    const select = document.createElement("select");
-    select.className = "note-length-select";
-    select.setAttribute("aria-label", `${track.name} note length`);
-    select.title = "Note length for this instrument layer";
-    NOTE_LENGTHS.forEach((length) => {
-      const option = document.createElement("option");
-      option.value = length;
-      option.textContent = length;
-      select.append(option);
-    });
-    select.value = pattern?.noteLengths?.[track.id] || "1/16";
-    select.addEventListener("change", () => {
-      const activePattern = getPattern();
-      if (!activePattern) return;
-      activePattern.noteLengths[track.id] = select.value;
-      saveState();
     });
     return select;
   }
@@ -1013,8 +1000,8 @@
     return 60 / state.bpm / 4;
   }
 
-  function getNoteDuration(pattern, track) {
-    const length = pattern?.noteLengths?.[track.id] || "1/16";
+  function getNoteDuration(pattern) {
+    const length = getPatternNoteLength(pattern);
     return 60 / state.bpm * (NOTE_LENGTH_BEATS[length] || NOTE_LENGTH_BEATS["1/16"]);
   }
 
@@ -1027,7 +1014,7 @@
       const cells = pattern ? pattern.cells?.[track.id] || [] : track.cells;
       const variant = pattern ? pattern.variants?.[track.id] || "classic" : track.variant;
       if (cells[step] && !track.muted && (!hasSolo || track.solo)) {
-        triggerTrack(track, time, step, variant, getNoteDuration(pattern || getPattern(), track));
+        triggerTrack(track, time, step, variant, getNoteDuration(pattern || getPattern()));
       }
     });
     if (playMetronome && state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
@@ -1193,7 +1180,6 @@
           if (pattern) {
             pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
             pattern.cells[track.id] = Array(STEP_COUNT).fill(false);
-            pattern.noteLengths[track.id] = "1/16";
           }
           imported.push({ track, file });
         } catch {
@@ -1246,7 +1232,6 @@
       removedIds.forEach((id) => {
         delete pattern.cells[id];
         delete pattern.variants[id];
-        delete pattern.noteLengths[id];
       });
     });
     renderTracks();
@@ -2165,7 +2150,6 @@
             if (pattern) {
               pattern.trackIds = [...getPatternTrackIds(pattern), track.id];
               pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => record.cells?.[index] === true);
-              pattern.noteLengths[track.id] = "1/16";
             }
           } else {
             track.sample = { name: record.fileName || record.trackName, buffer };
@@ -2709,7 +2693,7 @@
         trackIds: [...getPatternTrackIds(pattern)],
         cells: Object.fromEntries(Object.entries(pattern.cells).map(([trackId, cells]) => [trackId, [...cells]])),
         variants: { ...pattern.variants },
-        noteLengths: { ...pattern.noteLengths },
+        noteLength: getPatternNoteLength(pattern),
         color: pattern.color,
       })),
       tracks: state.tracks.map((track) => ({
@@ -2831,12 +2815,10 @@
           .map((pattern, index) => {
             const cells = {};
             const variants = {};
-            const noteLengths = {};
             state.tracks.forEach((track) => {
               cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
               const variant = pattern.variants?.[track.id];
               if (SOUND_VARIANTS[track.kind]?.some((sound) => sound.id === variant)) variants[track.id] = variant;
-              noteLengths[track.id] = NOTE_LENGTHS.includes(pattern.noteLengths?.[track.id]) ? pattern.noteLengths[track.id] : "1/16";
             });
             return {
               id: pattern.id,
@@ -2848,7 +2830,7 @@
                 : state.tracks.filter((track) => !track.libraryOnly).map((track) => track.id),
               cells,
               variants,
-              noteLengths,
+              noteLength: getPatternNoteLength(pattern),
             };
           });
         state.patterns = restoredPatterns.length
@@ -2977,12 +2959,12 @@
       swing: state.swing,
       bars: state.steps / 16,
       steps: state.steps,
+      noteLength: getPatternNoteLength(activePattern),
       pattern: activePattern?.name || "Pattern",
       tracks: state.tracks.filter((track) => getPatternTrackIds(activePattern).includes(track.id)).map((track) => ({
         name: track.name,
         sample: track.sample?.name || null,
         sound: track.variant || null,
-        noteLength: activePattern?.noteLengths?.[track.id] || "1/16",
         steps: track.cells.slice(0, state.steps).map((active) => active ? 1 : 0),
       })),
     };
@@ -3064,7 +3046,7 @@
           if (time >= duration) continue;
           patternTracks.forEach((track) => {
             if (pattern.cells[track.id]?.[patternStep] && !track.muted && (!hasSolo || track.solo)) {
-              triggerTrack(track, time, patternStep, pattern.variants[track.id] || track.variant, getNoteDuration(pattern, track));
+              triggerTrack(track, time, patternStep, pattern.variants[track.id] || track.variant, getNoteDuration(pattern));
             }
           });
         }
@@ -3316,6 +3298,12 @@
       $("#arrangement-track-labels").scrollTop = event.currentTarget.scrollTop;
     });
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
+    $("#step-note-length-select").addEventListener("change", (event) => {
+      const pattern = getPattern();
+      if (!pattern) return;
+      pattern.noteLength = event.target.value;
+      saveState();
+    });
     $("#arrangement-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#rename-pattern-sequencer-button").addEventListener("click", renamePattern);
     $("#rename-pattern-button").addEventListener("click", renamePattern);
