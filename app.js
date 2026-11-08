@@ -145,6 +145,8 @@
     projectName: "Untitled session",
     projects: [],
     suppressArrangementClick: false,
+    pianoSelectionFromMarquee: false,
+    arrangementSelectionFromMarquee: false,
     workspaceRatio: 50,
     workspaceHidden: false,
     trackViewHidden: false,
@@ -426,6 +428,7 @@
     state.pianoNotes = mel.notes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
     state.selectedPianoNoteId = null;
     state.selectedPianoNoteIds.clear();
+    state.pianoSelectionFromMarquee = false;
   }
 
   function ensureMels() {
@@ -643,6 +646,7 @@
     state.selectedPianoNoteIds = event.shiftKey
       ? new Set([...state.selectedPianoNoteIds, note.id])
       : new Set([note.id]);
+    state.pianoSelectionFromMarquee = false;
     state.selectedArrangementItems.clear();
     updateArrangementSelection();
     renderPianoRoll();
@@ -657,6 +661,7 @@
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    state.pianoSelectionFromMarquee = false;
     if (event.shiftKey) {
       if (event.ctrlKey || event.metaKey) {
         deleteSelectedPianoNotes(new Set([...state.selectedPianoNoteIds, note.id]));
@@ -727,6 +732,7 @@
   }
 
   function selectPianoNote(noteId, additive = false) {
+    state.pianoSelectionFromMarquee = false;
     state.selectedArrangementItems.clear();
     updateArrangementSelection();
     state.selectedPianoNoteIds = additive
@@ -744,6 +750,7 @@
     state.selectedArrangementItems.clear();
     updateArrangementSelection();
     state.pianoNotes = state.pianoNotes.filter((note) => !existingIds.has(note.id));
+    state.pianoSelectionFromMarquee = false;
     existingIds.forEach((id) => {
       [...state.scheduledPianoNotes].filter((key) => key.startsWith(`${id}:`)).forEach((key) => state.scheduledPianoNotes.delete(key));
     });
@@ -799,7 +806,9 @@
       });
       state.selectedPianoNoteIds = next;
       state.selectedPianoNoteId = [...next].at(-1) || null;
+      state.pianoSelectionFromMarquee = true;
       state.selectedArrangementItems.clear();
+      state.arrangementSelectionFromMarquee = false;
       updateArrangementSelection();
       state.suppressPianoGridClick = true;
       window.setTimeout(() => { state.suppressPianoGridClick = false; }, 0);
@@ -808,6 +817,23 @@
     document.addEventListener("pointermove", update);
     document.addEventListener("pointerup", finish);
     document.addEventListener("pointercancel", finish);
+  }
+
+  function clearMarqueeSelectionOnOutsidePointer(event) {
+    if (event.button !== 0 || event.shiftKey) return;
+    const target = event.target;
+    if (state.pianoSelectionFromMarquee && !target.closest(".piano-roll-note")) {
+      state.selectedPianoNoteIds.clear();
+      state.selectedPianoNoteId = null;
+      state.pianoSelectionFromMarquee = false;
+      if (target.closest("#piano-roll-grid")) state.suppressPianoGridClick = true;
+      document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.remove("is-selected"));
+    }
+    if (state.arrangementSelectionFromMarquee && !target.closest("[data-selectable-type]")) {
+      state.selectedArrangementItems.clear();
+      state.arrangementSelectionFromMarquee = false;
+      updateArrangementSelection();
+    }
   }
 
   function addPatternInstrument(trackId) {
@@ -2314,6 +2340,7 @@
 
   function selectArrangementItem(type, id, event) {
     const key = arrangementSelectionKey(type, id);
+    state.arrangementSelectionFromMarquee = false;
     if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
       state.selectedPianoNoteIds.clear();
       state.selectedPianoNoteId = null;
@@ -2359,6 +2386,7 @@
     });
     state.arrangementTracks = state.arrangementTracks.filter((track) => track.clips.length > 0);
     state.selectedArrangementItems.clear();
+    state.arrangementSelectionFromMarquee = false;
     if (!deleted) return false;
     updateArrangementLength();
     renderArrangement();
@@ -2405,8 +2433,10 @@
         }
       });
       state.selectedArrangementItems = next;
+      state.arrangementSelectionFromMarquee = true;
       state.selectedPianoNoteIds.clear();
       state.selectedPianoNoteId = null;
+      state.pianoSelectionFromMarquee = false;
       document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.remove("is-selected"));
       state.suppressArrangementClick = true;
       window.setTimeout(() => { state.suppressArrangementClick = false; }, 0);
@@ -2423,6 +2453,7 @@
     if (view !== "piano-roll") {
       state.selectedPianoNoteIds.clear();
       state.selectedPianoNoteId = null;
+      state.pianoSelectionFromMarquee = false;
     }
     state.view = view;
     state.workspaceHidden = false;
@@ -4010,6 +4041,7 @@
       state.pianoNotes = state.pianoNotes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
       state.selectedPianoNoteIds.clear();
       state.selectedPianoNoteId = null;
+      state.pianoSelectionFromMarquee = false;
       renderPianoRoll();
       saveState();
     });
@@ -4038,6 +4070,7 @@
       state.pianoNotes = [];
       state.selectedPianoNoteId = null;
       state.selectedPianoNoteIds.clear();
+      state.pianoSelectionFromMarquee = false;
       state.scheduledPianoNotes.clear();
       renderPianoRoll();
       updateArrangementLength();
@@ -4054,6 +4087,7 @@
       event.preventDefault();
       event.stopPropagation();
     }, true);
+    document.addEventListener("pointerdown", clearMarqueeSelectionOnOutsidePointer, true);
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#grid-resolution-select").addEventListener("change", (event) => {
       setPatternGridResolution(event.target.value);
@@ -4157,7 +4191,9 @@
       state.selectedPianoTrackId = "piano-grand";
       state.selectedPianoNoteId = null;
       state.selectedPianoNoteIds.clear();
+      state.pianoSelectionFromMarquee = false;
       state.selectedArrangementItems.clear();
+      state.arrangementSelectionFromMarquee = false;
       state.arrangementBars = 32;
       state.arrangementCursor = 0;
       state.workspaceRatio = 50;
