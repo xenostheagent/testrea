@@ -165,14 +165,15 @@
                             <select id="sequencer-pattern-select" aria-label="Select pattern to edit"></select>
                           </label>
                           <label class="pattern-select-control">
-                            <span>NOTE LENGTH</span>
-                            <select id="step-note-length-select" aria-label="Step note length for all instruments">
-                              <option value="1/32">1/32</option>
-                              <option value="1/16" selected>1/16</option>
-                              <option value="1/8">1/8</option>
+                            <span>STEP SIZE</span>
+                            <select id="grid-resolution-select" aria-label="Step grid subdivision">
                               <option value="1/4">1/4</option>
+                              <option value="1/8">1/8</option>
+                              <option value="1/16" selected>1/16</option>
+                              <option value="1/32">1/32</option>
                             </select>
                           </label>
+                          <button class="quiet-button keyboard-record-button" id="step-keyboard-record-button" type="button" aria-pressed="false">Record keys</button>
                           <button class="quiet-button" id="rename-pattern-sequencer-button" type="button">Rename</button>
                           <button class="quiet-button" id="sequencer-browser-button" type="button">Browser</button>
                           <label class="pattern-select-control pattern-instrument-control">
@@ -226,6 +227,7 @@
                         <button class="quiet-button" id="new-mel-button" type="button">＋ New Mel</button>
                         <button class="quiet-button" id="rename-mel-button" type="button">Rename</button>
                         <button class="quiet-button pattern-drag-source" id="mel-drag-source" type="button" draggable="true">Drag Mel to Track View</button>
+                        <button class="quiet-button keyboard-record-button" id="piano-keyboard-record-button" type="button" aria-pressed="false">Record keys</button>
                         <label class="pattern-select-control">
                           <span>INSTRUMENT</span>
                           <select id="piano-instrument-select" aria-label="Piano roll instrument"></select>

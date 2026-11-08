@@ -99,13 +99,24 @@
     },
   ];
   const STORAGE_KEY = "pulsegrid-session-v1";
-  const STEP_COUNT = 32;
+  const STEP_COUNT = 64;
   const BAR_WIDTH = 116;
   const MAX_ARRANGEMENT_BARS = 256;
   const TRACK_COLORS = ["#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd"];
   const PATTERN_COLORS = ["#d3f36b", "#7cc9ff", "#ff9178", "#ee9df6", "#f6ca74", "#93e2bd", "#b5a0ff", "#f28dba"];
-  const NOTE_LENGTHS = ["1/32", "1/16", "1/8", "1/4"];
-  const NOTE_LENGTH_BEATS = { "1/32": 0.125, "1/16": 0.25, "1/8": 0.5, "1/4": 1 };
+  const GRID_RESOLUTIONS = ["1/32", "1/16", "1/8", "1/4"];
+  const GRID_STEPS_PER_BAR = { "1/32": 32, "1/16": 16, "1/8": 8, "1/4": 4 };
+  const LIVE_KEY_CODES = [
+    ..."1234567890".split("").map((key) => `Digit${key}`),
+    ..."qwertyuiopasdfghjklzxcvbnm".split("").map((key) => `Key${key.toUpperCase()}`),
+    "Minus", "Equal", "BracketLeft", "BracketRight", "Semicolon", "Quote", "Backslash", "Comma", "Period", "Slash",
+  ];
+  const PIANO_KEY_MIDI = new Map([
+    ["KeyZ", 60], ["KeyS", 61], ["KeyX", 62], ["KeyD", 63], ["KeyC", 64], ["KeyV", 65],
+    ["KeyG", 66], ["KeyB", 67], ["KeyH", 68], ["KeyN", 69], ["KeyJ", 70], ["KeyM", 71],
+    ["KeyQ", 72], ["Digit2", 73], ["KeyW", 74], ["Digit3", 75], ["KeyE", 76], ["KeyR", 77],
+    ["Digit5", 78], ["KeyT", 79], ["Digit6", 80], ["KeyY", 81], ["Digit7", 82], ["KeyU", 83],
+  ]);
   const PIANO_TICKS_PER_BAR = 32;
   const PIANO_ROW_HEIGHT = 18;
   const PIANO_TOP_MIDI = 83;
@@ -130,6 +141,8 @@
     workspaceHidden: false,
     trackViewHidden: false,
     scheduledPianoNotes: new Set(),
+    liveRecordedHits: new Set(),
+    keyboardRecording: null,
     suppressPianoGridClick: false,
     steps: 16,
     view: "arrangement",
@@ -187,14 +200,40 @@
     return state.patterns.find((pattern) => pattern.id === patternId) || null;
   }
 
-  function getPatternNoteLength(pattern) {
-    if (NOTE_LENGTHS.includes(pattern?.noteLength)) return pattern.noteLength;
-    const counts = Object.fromEntries(NOTE_LENGTHS.map((length) => [length, 0]));
+  function getPatternGridResolution(pattern) {
+    if (GRID_RESOLUTIONS.includes(pattern?.gridResolution)) return pattern.gridResolution;
+    if (GRID_RESOLUTIONS.includes(pattern?.noteLength)) return pattern.noteLength;
+    const counts = Object.fromEntries(GRID_RESOLUTIONS.map((resolution) => [resolution, 0]));
     Object.values(pattern?.noteLengths || {}).forEach((length) => {
-      if (NOTE_LENGTHS.includes(length)) counts[length] += 1;
+      if (GRID_RESOLUTIONS.includes(length)) counts[length] += 1;
     });
-    return NOTE_LENGTHS.reduce((selected, length) =>
-      counts[length] > counts[selected] ? length : selected, "1/16");
+    return GRID_RESOLUTIONS.reduce((selected, resolution) =>
+      counts[resolution] > counts[selected] ? resolution : selected, "1/16");
+  }
+
+  function getStepsPerBar(pattern = getPattern()) {
+    return GRID_STEPS_PER_BAR[getPatternGridResolution(pattern)] || 16;
+  }
+
+  function getGridStepCount(pattern = getPattern()) {
+    const bars = pattern ? pattern.steps / 16 : state.steps / 16;
+    return bars * getStepsPerBar(pattern);
+  }
+
+  function remapGridCells(cells, bars, previousSlotsPerBar, nextSlotsPerBar) {
+    const remapped = Array(STEP_COUNT).fill(false);
+    for (let index = 0; index < bars * previousSlotsPerBar; index += 1) {
+      if (!cells[index]) continue;
+      const bar = Math.floor(index / previousSlotsPerBar);
+      const stepInBar = index % previousSlotsPerBar;
+      const nextStepInBar = Math.min(nextSlotsPerBar - 1, Math.round(stepInBar * nextSlotsPerBar / previousSlotsPerBar));
+      remapped[bar * nextSlotsPerBar + nextStepInBar] = true;
+    }
+    return remapped;
+  }
+
+  function getGridTicksPerStep(pattern = getPattern()) {
+    return 32 / getStepsPerBar(pattern);
   }
 
   function isSongWorkspace() {
@@ -260,7 +299,7 @@
       trackIds: state.tracks.filter((track) => !track.libraryOnly).map((track) => track.id),
       cells,
       variants,
-      noteLength: "1/16",
+      gridResolution: "1/16",
     };
   }
 
@@ -272,7 +311,7 @@
     pattern.trackIds = trackIds;
     pattern.cells = {};
     pattern.variants = {};
-    pattern.noteLength = getPatternNoteLength(pattern);
+    pattern.gridResolution = getPatternGridResolution(pattern);
     state.tracks.filter((track) => trackIds.includes(track.id)).forEach((track) => {
       pattern.cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => track.cells[index] === true);
       if (SOUND_VARIANTS[track.kind]) pattern.variants[track.id] = track.variant || "classic";
@@ -299,7 +338,7 @@
       button.classList.toggle("is-selected", selected);
       button.setAttribute("aria-pressed", String(selected));
     });
-    $("#step-note-length-select").value = getPatternNoteLength(pattern);
+    $("#grid-resolution-select").value = getPatternGridResolution(pattern);
     renderHeader();
   }
 
@@ -319,7 +358,7 @@
     dragSource.textContent = selected ? `Drag ${selected.name} to timeline` : "No pattern selected";
     dragSource.disabled = !selected;
     dragSource.style.setProperty("--pattern-color", selected?.color || "var(--accent)");
-    $("#step-note-length-select").value = getPatternNoteLength(selected);
+    $("#grid-resolution-select").value = getPatternGridResolution(selected);
     renderPatternInstrumentOptions();
   }
 
@@ -420,6 +459,7 @@
   }
 
   function selectMel(melId) {
+    if (state.keyboardRecording?.mode === "piano-roll") stopPlayback();
     captureCurrentMel();
     loadMel(melId);
     renderMelOptions();
@@ -696,6 +736,7 @@
   function selectPattern(patternId) {
     const pattern = getPattern(patternId);
     if (!pattern || pattern.id === state.selectedPatternId) return;
+    if (state.keyboardRecording?.mode === "sequencer") stopPlayback();
     captureCurrentPattern();
     applyPattern(pattern);
     state.selectedPreset = null;
@@ -721,7 +762,7 @@
       trackIds: [...getPatternTrackIds(source)],
       cells: Object.fromEntries(Object.entries(source.cells).map(([trackId, cells]) => [trackId, [...cells]])),
       variants: { ...source.variants },
-      noteLength: getPatternNoteLength(source),
+      gridResolution: getPatternGridResolution(source),
     };
     state.patterns.push(pattern);
     applyPattern(pattern);
@@ -759,11 +800,19 @@
     stepsHeader.innerHTML = "";
     const gridHeader = stepsHeader.parentElement;
     gridHeader.classList.toggle("is-two-bars", state.steps === 32);
-    stepsHeader.style.gridTemplateRows = state.steps === 32 ? "repeat(2, 17px)" : "";
-    for (let step = 0; step < state.steps; step += 1) {
-      const barStep = step % 16;
+    const slotsPerBar = getStepsPerBar();
+    const columns = Math.min(16, slotsPerBar);
+    const stepCount = getGridStepCount();
+    const rows = Math.ceil(stepCount / columns);
+    const rowHeight = rows > 2 ? 12 : 17;
+    gridHeader.style.height = `${Math.max(45, rows * rowHeight + 11)}px`;
+    stepsHeader.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+    stepsHeader.style.gridTemplateRows = `repeat(${rows}, ${rowHeight}px)`;
+    for (let step = 0; step < stepCount; step += 1) {
+      const barStep = step % slotsPerBar;
+      const stepsPerBeat = slotsPerBar / 4;
       const number = document.createElement("span");
-      number.className = `step-number${barStep % 4 === 0 ? " is-beat" : ""}${barStep === 0 ? " is-bar" : ""}`;
+      number.className = `step-number${barStep % stepsPerBeat === 0 ? " is-beat" : ""}${barStep === 0 ? " is-bar" : ""}`;
       number.textContent = String(barStep + 1).padStart(2, "0");
       stepsHeader.append(number);
     }
@@ -773,11 +822,18 @@
     trackList.innerHTML = "";
     const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
     const visibleTracks = state.tracks.filter((track) => includedTrackIds.has(track.id));
+    const liveKeys = state.keyboardRecording?.mode === "sequencer" ? getStepKeyboardMap() : null;
     visibleTracks.forEach((track) => {
       const row = document.createElement("div");
       row.className = "track-row";
       row.dataset.trackId = track.id;
       row.style.setProperty("--track-color", track.color);
+      const slotsPerBar = getStepsPerBar();
+      const columns = Math.min(16, slotsPerBar);
+      const stepCount = getGridStepCount();
+      const rows = Math.ceil(stepCount / columns);
+      const cellHeight = Math.min(28, Math.max(12, Math.floor((64 - (rows - 1) * 5) / rows)));
+      row.style.minHeight = `${Math.max(64, rows * cellHeight + (rows - 1) * 5)}px`;
 
       const meta = document.createElement("div");
       meta.className = "track-meta";
@@ -788,7 +844,18 @@
       info.className = "track-info";
       const name = document.createElement("div");
       name.className = "track-name";
-      name.textContent = track.name;
+      const nameText = document.createElement("span");
+      nameText.className = "track-name-text";
+      nameText.textContent = track.name;
+      name.append(nameText);
+      const liveKey = liveKeys?.get(track.id);
+      if (liveKey) {
+        const keyHint = document.createElement("kbd");
+        keyHint.className = "live-key-hint";
+        keyHint.textContent = liveKey.label;
+        name.append(keyHint);
+        name.title = `${track.name} · press ${liveKey.label} to record`;
+      }
       const subtitle = document.createElement("div");
       subtitle.className = `track-subtitle${track.sample ? " has-sample" : ""}`;
       subtitle.title = track.sample?.name || track.subtitle;
@@ -822,9 +889,12 @@
 
       const grid = document.createElement("div");
       grid.className = "steps-grid";
+      grid.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
+      grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+      grid.style.setProperty("--step-cell-height", `${cellHeight}px`);
       grid.setAttribute("role", "group");
       grid.setAttribute("aria-label", `${track.name} steps`);
-      for (let step = 0; step < state.steps; step += 1) {
+      for (let step = 0; step < stepCount; step += 1) {
         const cell = document.createElement("button");
         cell.className = `step-cell${track.cells[step] ? " is-on" : ""}`;
         cell.type = "button";
@@ -931,10 +1001,14 @@
     state.bpm = preset.bpm;
     tempoValue.textContent = String(state.bpm);
     const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
+    const slotsPerBar = getStepsPerBar();
     state.tracks.forEach((track) => {
       track.cells.fill(false);
       if (includedTrackIds.has(track.id)) {
-        (preset.hits[track.sourceId || track.id] || []).forEach((step) => { track.cells[step] = true; });
+        (preset.hits[track.sourceId || track.id] || []).forEach((sixteenthStep) => {
+          const step = Math.min(slotsPerBar - 1, Math.round(sixteenthStep * slotsPerBar / 16));
+          track.cells[step] = true;
+        });
       }
     });
     renderTracks();
@@ -948,6 +1022,7 @@
 
   function setLength(steps) {
     state.steps = steps;
+    state.liveRecordedHits.clear();
     const activePattern = getPattern();
     if (activePattern) activePattern.steps = steps;
     $("#arrangement-pattern-length").value = String(steps);
@@ -965,8 +1040,195 @@
     renderTracks();
     updateArrangementLength();
     if (isSongWorkspace()) renderArrangement();
-    if (state.currentStep >= steps) state.currentStep = -1;
+    if (state.currentStep >= getGridStepCount()) state.currentStep = -1;
     saveState();
+  }
+
+  function setPatternGridResolution(gridResolution) {
+    const pattern = getPattern();
+    if (!pattern || !GRID_RESOLUTIONS.includes(gridResolution)) return;
+    captureCurrentPattern();
+    const previousSlotsPerBar = getStepsPerBar(pattern);
+    if (previousSlotsPerBar === GRID_STEPS_PER_BAR[gridResolution]) return;
+    state.liveRecordedHits.clear();
+    const nextSlotsPerBar = GRID_STEPS_PER_BAR[gridResolution];
+    const bars = pattern.steps / 16;
+    const cells = {};
+    getPatternTrackIds(pattern).forEach((trackId) => {
+      cells[trackId] = remapGridCells(pattern.cells[trackId] || [], bars, previousSlotsPerBar, nextSlotsPerBar);
+    });
+    pattern.cells = { ...pattern.cells, ...cells };
+    pattern.gridResolution = gridResolution;
+    applyPattern(pattern);
+    renderTracks();
+    renderPatternSelectors();
+    if (isSongWorkspace()) renderArrangement();
+    saveState();
+  }
+
+  function getStepKeyboardMap(pattern = getPattern()) {
+    return new Map(getPatternTrackIds(pattern).map((trackId, index) => {
+      const code = LIVE_KEY_CODES[index % LIVE_KEY_CODES.length];
+      const shift = index >= LIVE_KEY_CODES.length;
+      return [trackId, { code, label: `${shift ? "Shift+" : ""}${liveKeyLabel(code)}` }];
+    }));
+  }
+
+  function liveKeyLabel(code) {
+    if (code.startsWith("Key")) return code.slice(3);
+    if (code.startsWith("Digit")) return code.slice(5);
+    return ({
+      Minus: "-", Equal: "=", BracketLeft: "[", BracketRight: "]", Semicolon: ";",
+      Quote: "'", Backslash: "\\", Comma: ",", Period: ".", Slash: "/",
+    })[code] || code;
+  }
+
+  function updateKeyboardRecordButtons() {
+    [
+      ["#step-keyboard-record-button", "sequencer"],
+      ["#piano-keyboard-record-button", "piano-roll"],
+    ].forEach(([selector, mode]) => {
+      const button = $(selector);
+      const isRecording = state.keyboardRecording?.mode === mode;
+      button.classList.toggle("is-recording", isRecording);
+      button.setAttribute("aria-pressed", String(isRecording));
+      button.textContent = isRecording ? "Stop recording" : "Record keys";
+    });
+  }
+
+  function createLivePattern() {
+    captureCurrentPattern();
+    const source = getPattern();
+    if (!source) return null;
+    let number = 1;
+    while (state.patterns.some((pattern) => pattern.name === `Live Pattern ${number}`)) number += 1;
+    const trackIds = [...getPatternTrackIds(source)];
+    const pattern = {
+      id: makeId(),
+      name: `Live Pattern ${number}`,
+      color: getPatternColor(state.patterns.length),
+      steps: source.steps,
+      trackIds,
+      cells: Object.fromEntries(trackIds.map((trackId) => [trackId, Array(STEP_COUNT).fill(false)])),
+      variants: { ...source.variants },
+      gridResolution: getPatternGridResolution(source),
+    };
+    state.patterns.push(pattern);
+    applyPattern(pattern);
+    state.selectedPreset = null;
+    renderTracks();
+    renderPresets();
+    renderPatternSelectors();
+    addPatternClip(state.arrangementCursor, pattern.id);
+    return pattern;
+  }
+
+  async function toggleKeyboardRecording(mode) {
+    if (state.keyboardRecording) {
+      stopPlayback();
+      return;
+    }
+    if (state.isPlaying) stopPlayback();
+    try {
+      await ensureAudio();
+      let targetId;
+      if (mode === "sequencer") {
+        const pattern = createLivePattern();
+        if (!pattern) return;
+        targetId = pattern.id;
+      } else {
+        createMel();
+        const mel = getMel();
+        if (!mel) return;
+        targetId = mel.id;
+        addMelTrack(mel.id, state.arrangementCursor);
+        renderPianoRoll();
+      }
+      state.keyboardRecording = { mode, targetId };
+      updateKeyboardRecordButtons();
+      if (mode === "sequencer") renderTracks();
+      await startPlayback();
+      if (!state.isPlaying) {
+        state.keyboardRecording = null;
+        updateKeyboardRecordButtons();
+        renderTracks();
+        return;
+      }
+      showToast(mode === "sequencer"
+        ? "Recording keys: use the shortcuts shown on each instrument."
+        : "Recording keys: use Z/S/X… and Q/2/W… to play notes.");
+    } catch (error) {
+      state.keyboardRecording = null;
+      updateKeyboardRecordButtons();
+      showToast(error.message || "Keyboard recording could not start.");
+    }
+  }
+
+  function recordStepKeyboardHit(event) {
+    if (!state.keyboardRecording || state.keyboardRecording.mode !== "sequencer" ||
+      state.view !== "sequencer" || !state.audioContext || event.repeat) return false;
+    const keyIndex = LIVE_KEY_CODES.indexOf(event.code);
+    if (keyIndex < 0) return false;
+    const trackIndex = keyIndex + (event.shiftKey ? LIVE_KEY_CODES.length : 0);
+    const pattern = getPattern(state.keyboardRecording.targetId);
+    if (!pattern) return false;
+    const trackId = getPatternTrackIds(pattern)[trackIndex];
+    const track = state.tracks.find((item) => item.id === trackId);
+    if (!track) return false;
+    event.preventDefault();
+    const ticksPerStep = getGridTicksPerStep(pattern);
+    const elapsed = Math.max(0, state.audioContext.currentTime - state.playbackStartTime);
+    const gridStepCount = getGridStepCount(pattern);
+    const gridStepDuration = getSchedulerTickDuration() * ticksPerStep;
+    const absoluteGridStep = Math.max(0, Math.ceil(elapsed / gridStepDuration - 0.000001));
+    const loopIndex = Math.floor(absoluteGridStep / gridStepCount);
+    const gridStep = absoluteGridStep % gridStepCount;
+    pattern.cells[track.id] ||= Array(STEP_COUNT).fill(false);
+    pattern.cells[track.id][gridStep] = true;
+    state.liveRecordedHits.add(`${pattern.id}:${loopIndex}:${track.id}:${gridStep}`);
+    track.cells[gridStep] = true;
+    const hasSolo = state.tracks.some((item) => item.solo);
+    if (!track.muted && (!hasSolo || track.solo)) {
+      const time = state.audioContext.currentTime + 0.01;
+      const midi = track.kind === "drumkit" ? 36 : 60 + (keyIndex % 24);
+      if (track.kind === "instrument" || track.kind === "drumkit") {
+        playPianoNote(track, time, midi, getStepDuration(), 0.85);
+      } else {
+        triggerTrack(track, time, gridStep, pattern.variants[track.id] || track.variant, getNoteDuration());
+      }
+    }
+    renderTracks();
+    saveState();
+    return true;
+  }
+
+  function recordPianoKeyboardNote(event) {
+    if (!state.keyboardRecording || state.keyboardRecording.mode !== "piano-roll" ||
+      state.view !== "piano-roll" || !state.audioContext || event.repeat) return false;
+    const midi = PIANO_KEY_MIDI.get(event.code);
+    if (midi === undefined) return false;
+    const mel = getMel(state.keyboardRecording.targetId);
+    const instrument = mel ? getPianoTrack(mel.instrumentId) : null;
+    if (!mel || !instrument) return false;
+    event.preventDefault();
+    const secondsPerBar = 240 / state.bpm;
+    const loopTicks = getMelLengthBars(mel) * PIANO_TICKS_PER_BAR;
+    const elapsedSeconds = Math.max(0, state.audioContext.currentTime - state.playbackStartTime);
+    const elapsedTicks = Math.floor(elapsedSeconds / secondsPerBar * PIANO_TICKS_PER_BAR);
+    const startTick = Math.floor((elapsedTicks % loopTicks) / state.pianoSnap) * state.pianoSnap;
+    const durationTicks = Math.max(1, Math.min(state.pianoNoteLength, loopTicks - startTick));
+    const note = { id: makeId(), trackId: instrument.id, midi, startTick, durationTicks, velocity: 0.8 };
+    mel.notes.push(note);
+    mel.notes.sort((left, right) => left.startTick - right.startTick);
+    state.pianoNotes = mel.notes.map((item) => ({ ...item, trackId: instrument.id }));
+    state.selectedPianoNoteId = note.id;
+    const loopIndex = Math.floor(elapsedSeconds / (loopTicks / PIANO_TICKS_PER_BAR * secondsPerBar));
+    state.scheduledPianoNotes.add(`${note.id}:${loopIndex}`);
+    playPianoNote(instrument, state.audioContext.currentTime + 0.01, midi, durationTicks / PIANO_TICKS_PER_BAR * secondsPerBar, note.velocity);
+    renderPianoRoll();
+    renderArrangement();
+    saveState();
+    return true;
   }
 
   function initializeAudio() {
@@ -1000,12 +1262,15 @@
     return 60 / state.bpm / 4;
   }
 
-  function getNoteDuration(pattern) {
-    const length = getPatternNoteLength(pattern);
-    return 60 / state.bpm * (NOTE_LENGTH_BEATS[length] || NOTE_LENGTH_BEATS["1/16"]);
+  function getSchedulerTickDuration() {
+    return getStepDuration() / 2;
   }
 
-  function scheduleStep(step, time, pattern = null, playMetronome = true) {
+  function getNoteDuration() {
+    return getStepDuration();
+  }
+
+  function scheduleStep(step, time, pattern = null, loopIndex = null) {
     const activeTracks = pattern
       ? state.tracks.filter((track) => getPatternTrackIds(pattern).includes(track.id))
       : state.tracks;
@@ -1014,11 +1279,11 @@
       const cells = pattern ? pattern.cells?.[track.id] || [] : track.cells;
       const variant = pattern ? pattern.variants?.[track.id] || "classic" : track.variant;
       if (cells[step] && !track.muted && (!hasSolo || track.solo)) {
+        if (pattern && loopIndex !== null &&
+          state.liveRecordedHits.delete(`${pattern.id}:${loopIndex}:${track.id}:${step}`)) return;
         triggerTrack(track, time, step, variant, getNoteDuration(pattern || getPattern()));
       }
     });
-    if (playMetronome && state.metronome && step % 4 === 0) triggerClick(time, step % 16 === 0);
-
     const displayDelay = Math.max(0, (time - state.audioContext.currentTime) * 1000);
     const timerId = window.setTimeout(() => {
       state.stepTimers.delete(timerId);
@@ -1046,19 +1311,30 @@
     ) {
       const clockStep = state.stepIndex;
       const arrangementSteps = arrangementPlayback ? arrangementStepsAtTime(state.nextStepTime) : null;
-      const step = arrangementPlayback ? arrangementSteps[0]?.step ?? -1 : state.stepIndex;
-      const swingOffset = (step >= 0 ? step : clockStep) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
+      const swingOffset = Math.floor(clockStep / 2) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0;
       if (arrangementPlayback) {
         arrangementSteps.forEach(({ pattern, step: patternStep }) =>
-          scheduleStep(patternStep, state.nextStepTime + swingOffset, pattern, false));
-        if (state.metronome && (step >= 0 ? step : clockStep) % 4 === 0) {
-          triggerClick(state.nextStepTime + swingOffset, (step >= 0 ? step : clockStep) % 16 === 0);
+          scheduleStep(patternStep, state.nextStepTime + swingOffset, pattern));
+        if (state.metronome && clockStep % 8 === 0) {
+          triggerClick(state.nextStepTime + swingOffset, clockStep % 32 === 0);
         }
       } else if (state.view === "sequencer") {
-        scheduleStep(state.stepIndex, state.nextStepTime + swingOffset);
+        const pattern = getPattern();
+        const gridStepCount = getGridStepCount(pattern);
+        const ticksPerGridStep = getGridTicksPerStep(pattern);
+        if (clockStep % ticksPerGridStep === 0) {
+          const absoluteTick = Math.round((state.nextStepTime - state.playbackStartTime) / getSchedulerTickDuration());
+          const patternTicks = pattern.steps * 2;
+          if (absoluteTick > 0 && absoluteTick % patternTicks === 0) state.liveRecordedHits.clear();
+          const loopIndex = Math.floor(absoluteTick / patternTicks);
+          scheduleStep(Math.floor(clockStep / ticksPerGridStep) % gridStepCount, state.nextStepTime + swingOffset, pattern, loopIndex);
+        }
+        if (state.metronome && clockStep % 8 === 0) {
+          triggerClick(state.nextStepTime, clockStep % 32 === 0);
+        }
       }
-      state.nextStepTime += getStepDuration();
-      state.stepIndex = (clockStep + 1) % state.steps;
+      state.nextStepTime += getSchedulerTickDuration();
+      state.stepIndex = (clockStep + 1) % (state.steps * 2);
     }
     if (pianoLoopPlayback) scheduleCurrentMelLoop(lookAhead);
   }
@@ -1069,9 +1345,13 @@
       const pattern = getPattern(clip.patternId);
       const clipBars = pattern ? pattern.steps / 16 * (clip.repeatCount || 1) : 0;
       if (!pattern || barPosition < clip.startBar || barPosition >= clip.startBar + clipBars) return [];
+      const stepsPerBar = getStepsPerBar(pattern);
+      const position = (barPosition - clip.startBar) * stepsPerBar;
+      const stepInClip = Math.round(position);
+      if (Math.abs(position - stepInClip) > 0.001) return [];
       return [{
         pattern,
-        step: Math.floor((barPosition - clip.startBar) * 16 + 0.00001) % pattern.steps,
+        step: stepInClip % getGridStepCount(pattern),
       }];
     });
   }
@@ -2544,7 +2824,7 @@
       state.playbackEndTime = arrangementPlayback
         ? state.playbackStartTime + (state.arrangementBars - startBar) * (240 / state.bpm)
         : Infinity;
-      state.stepIndex = arrangementPlayback ? Math.floor(startBar * 16) % state.steps : 0;
+      state.stepIndex = 0;
       state.scheduledPianoNotes.clear();
       state.nextStepTime = state.playbackStartTime;
       updateTrackGains();
@@ -2607,6 +2887,11 @@
   function stopPlayback() {
     if (state.schedulerId !== null) window.clearInterval(state.schedulerId);
     state.schedulerId = null;
+    const stoppedRecording = state.keyboardRecording;
+    state.keyboardRecording = null;
+    state.liveRecordedHits.clear();
+    updateKeyboardRecordButtons();
+    if (stoppedRecording?.mode === "sequencer") renderTracks();
     state.isPlaying = false;
     state.stepIndex = 0;
     state.stepTimers.forEach((timerId) => window.clearTimeout(timerId));
@@ -2693,7 +2978,7 @@
         trackIds: [...getPatternTrackIds(pattern)],
         cells: Object.fromEntries(Object.entries(pattern.cells).map(([trackId, cells]) => [trackId, [...cells]])),
         variants: { ...pattern.variants },
-        noteLength: getPatternNoteLength(pattern),
+        gridResolution: getPatternGridResolution(pattern),
         color: pattern.color,
       })),
       tracks: state.tracks.map((track) => ({
@@ -2815,8 +3100,14 @@
           .map((pattern, index) => {
             const cells = {};
             const variants = {};
+            const gridResolution = getPatternGridResolution(pattern);
+            const isLegacyGrid = !GRID_RESOLUTIONS.includes(pattern.gridResolution);
+            const bars = pattern.steps === 32 ? 2 : 1;
             state.tracks.forEach((track) => {
-              cells[track.id] = Array.from({ length: STEP_COUNT }, (_, index) => pattern.cells?.[track.id]?.[index] === true);
+              const storedCells = Array.from({ length: STEP_COUNT }, (_, cellIndex) => pattern.cells?.[track.id]?.[cellIndex] === true);
+              cells[track.id] = isLegacyGrid
+                ? remapGridCells(storedCells, bars, 16, GRID_STEPS_PER_BAR[gridResolution])
+                : storedCells;
               const variant = pattern.variants?.[track.id];
               if (SOUND_VARIANTS[track.kind]?.some((sound) => sound.id === variant)) variants[track.id] = variant;
             });
@@ -2830,7 +3121,7 @@
                 : state.tracks.filter((track) => !track.libraryOnly).map((track) => track.id),
               cells,
               variants,
-              noteLength: getPatternNoteLength(pattern),
+              gridResolution,
             };
           });
         state.patterns = restoredPatterns.length
@@ -2958,14 +3249,14 @@
       tempo: state.bpm,
       swing: state.swing,
       bars: state.steps / 16,
-      steps: state.steps,
-      noteLength: getPatternNoteLength(activePattern),
+      steps: getGridStepCount(activePattern),
+      gridResolution: getPatternGridResolution(activePattern),
       pattern: activePattern?.name || "Pattern",
       tracks: state.tracks.filter((track) => getPatternTrackIds(activePattern).includes(track.id)).map((track) => ({
         name: track.name,
         sample: track.sample?.name || null,
         sound: track.variant || null,
-        steps: track.cells.slice(0, state.steps).map((active) => active ? 1 : 0),
+        steps: track.cells.slice(0, getGridStepCount(activePattern)).map((active) => active ? 1 : 0),
       })),
     };
     const blob = new Blob([JSON.stringify(pattern, null, 2)], { type: "application/json" });
@@ -3032,17 +3323,20 @@
         });
       });
 
-      const stepDuration = 60 / state.bpm / 4;
       state.patternClips.forEach((clip) => {
         const pattern = getPattern(clip.patternId);
         if (!pattern) return;
         const patternTrackIds = new Set(getPatternTrackIds(pattern));
         const patternTracks = allTracks.filter((track) => patternTrackIds.has(track.id));
-        const totalSteps = pattern.steps * (clip.repeatCount || 1);
+        const stepsPerBar = getStepsPerBar(pattern);
+        const ticksPerGridStep = getGridTicksPerStep(pattern);
+        const gridStepCount = getGridStepCount(pattern);
+        const totalSteps = gridStepCount * (clip.repeatCount || 1);
         for (let step = 0; step < totalSteps; step += 1) {
-          const patternStep = step % pattern.steps;
-          const time = clip.startBar * secondsPerBar + step * stepDuration +
-            (step % 2 === 1 ? stepDuration * (state.swing / 100) : 0);
+          const patternStep = step % gridStepCount;
+          const tick = patternStep * ticksPerGridStep;
+          const time = clip.startBar * secondsPerBar + step * secondsPerBar / stepsPerBar +
+            (Math.floor(tick / 2) % 2 === 1 ? getStepDuration() * (state.swing / 100) : 0);
           if (time >= duration) continue;
           patternTracks.forEach((track) => {
             if (pattern.cells[track.id]?.[patternStep] && !track.muted && (!hasSolo || track.solo)) {
@@ -3139,16 +3433,23 @@
   function randomize() {
     const includedTrackIds = new Set(getPatternTrackIds(getPattern()));
     const activeTracks = state.tracks.filter((track) => includedTrackIds.has(track.id));
+    const slotsPerBar = getStepsPerBar();
+    const stepsPerBeat = Math.max(1, slotsPerBar / 4);
+    const stepsPerEighth = Math.max(1, slotsPerBar / 8);
     state.tracks.forEach((track) => track.cells.fill(false));
-    for (let step = 0; step < state.steps; step += 1) {
+    for (let step = 0; step < getGridStepCount(); step += 1) {
+      const stepInBar = step % slotsPerBar;
       activeTracks.forEach((track) => {
         const sourceId = track.sourceId || track.id;
-        if (sourceId === "kick" && step % 4 === 0 && Math.random() > (step % 8 === 0 ? 0.08 : 0.27)) track.cells[step] = true;
-        if (sourceId === "snare" && step % 8 === 4 && Math.random() > 0.16) track.cells[step] = true;
-        if (sourceId === "closed-hat" && step % 2 === 1 && Math.random() > 0.28) track.cells[step] = true;
-        if (sourceId === "open-hat" && step % 8 === 6 && Math.random() > 0.42) track.cells[step] = true;
-        if (sourceId === "rim" && step % 4 === 3 && Math.random() > 0.48) track.cells[step] = true;
-        if (sourceId === "clap" && step % 8 === 4 && Math.random() > 0.6) track.cells[step] = true;
+        if (sourceId === "kick" && stepInBar % stepsPerBeat === 0 && Math.random() > (stepInBar % (stepsPerBeat * 2) === 0 ? 0.08 : 0.27)) track.cells[step] = true;
+        if (sourceId === "snare" && (stepInBar === stepsPerBeat || stepInBar === stepsPerBeat * 3) && Math.random() > 0.16) track.cells[step] = true;
+        if (sourceId === "closed-hat" && stepInBar % stepsPerEighth === 0 && Math.random() > 0.28) track.cells[step] = true;
+        if (sourceId === "open-hat" &&
+          (stepInBar === Math.min(slotsPerBar - 1, Math.round(slotsPerBar * 0.375)) ||
+            stepInBar === Math.min(slotsPerBar - 1, Math.round(slotsPerBar * 0.875))) &&
+          Math.random() > 0.42) track.cells[step] = true;
+        if (sourceId === "rim" && stepInBar % stepsPerBeat === stepsPerBeat - 1 && Math.random() > 0.48) track.cells[step] = true;
+        if (sourceId === "clap" && stepInBar === stepsPerBeat && Math.random() > 0.6) track.cells[step] = true;
       });
     }
     state.selectedPreset = null;
@@ -3250,6 +3551,8 @@
     });
     $("#open-beat-grid-button").addEventListener("click", () => setWorkspaceView(state.view === "sequencer" && !state.workspaceHidden ? "arrangement" : "sequencer"));
     $("#open-piano-roll-button").addEventListener("click", () => setWorkspaceView(state.view === "piano-roll" && !state.workspaceHidden ? "arrangement" : "piano-roll"));
+    $("#step-keyboard-record-button").addEventListener("click", () => toggleKeyboardRecording("sequencer"));
+    $("#piano-keyboard-record-button").addEventListener("click", () => toggleKeyboardRecording("piano-roll"));
     $("#mel-select").addEventListener("change", (event) => selectMel(event.target.value));
     $("#new-mel-button").addEventListener("click", createMel);
     $("#rename-mel-button").addEventListener("click", renameMel);
@@ -3260,6 +3563,7 @@
       event.dataTransfer.effectAllowed = "copy";
     });
     $("#piano-instrument-select").addEventListener("change", (event) => {
+      if (state.keyboardRecording?.mode === "piano-roll") stopPlayback();
       state.selectedPianoTrackId = event.target.value;
       state.pianoNotes = state.pianoNotes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
       renderPianoRoll();
@@ -3298,11 +3602,8 @@
       $("#arrangement-track-labels").scrollTop = event.currentTarget.scrollTop;
     });
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
-    $("#step-note-length-select").addEventListener("change", (event) => {
-      const pattern = getPattern();
-      if (!pattern) return;
-      pattern.noteLength = event.target.value;
-      saveState();
+    $("#grid-resolution-select").addEventListener("change", (event) => {
+      setPatternGridResolution(event.target.value);
     });
     $("#arrangement-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#rename-pattern-sequencer-button").addEventListener("click", renamePattern);
@@ -3426,6 +3727,9 @@
       const target = event.target;
       const isTyping = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
       const isButton = target instanceof HTMLElement && target.tagName === "BUTTON";
+      if (!isTyping && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !$("#help-dialog").open) {
+        if (recordStepKeyboardHit(event) || recordPianoKeyboardNote(event)) return;
+      }
       if (event.code === "Space" && !isTyping && !isButton && !$("#help-dialog").open) {
         event.preventDefault();
         state.isPlaying ? stopPlayback() : startPlayback();
