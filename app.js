@@ -99,6 +99,8 @@
     },
   ];
   const STORAGE_KEY = "pulsegrid-session-v1";
+  const PROJECTS_KEY = `${STORAGE_KEY}-projects`;
+  const PROJECT_STORAGE_PREFIX = `${STORAGE_KEY}-project-`;
   const STEP_COUNT = 64;
   const BAR_WIDTH = 116;
   const MAX_ARRANGEMENT_BARS = 256;
@@ -137,6 +139,12 @@
     pianoNoteLength: 2,
     selectedPianoTrackId: "piano-grand",
     selectedPianoNoteId: null,
+    selectedPianoNoteIds: new Set(),
+    selectedArrangementItems: new Set(),
+    projectId: "default",
+    projectName: "Untitled session",
+    projects: [],
+    suppressArrangementClick: false,
     workspaceRatio: 50,
     workspaceHidden: false,
     trackViewHidden: false,
@@ -417,6 +425,7 @@
     state.pianoBars = [1, 2, 4, 8].includes(mel.bars) ? mel.bars : 4;
     state.pianoNotes = mel.notes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
     state.selectedPianoNoteId = null;
+    state.selectedPianoNoteIds.clear();
   }
 
   function ensureMels() {
@@ -586,7 +595,8 @@
         const track = getPianoTrack(note.trackId);
         if (!track) return;
         const element = document.createElement("div");
-        element.className = `piano-roll-note${note.id === state.selectedPianoNoteId ? " is-selected" : ""}`;
+        element.className = `piano-roll-note${state.selectedPianoNoteIds.has(note.id) || note.id === state.selectedPianoNoteId ? " is-selected" : ""}`;
+        element.dataset.noteId = note.id;
         element.style.setProperty("--note-color", track.color);
         element.style.left = `${note.startTick * 16 + 1}px`;
         element.style.top = `${(PIANO_TOP_MIDI - note.midi) * PIANO_ROW_HEIGHT + 1}px`;
@@ -597,19 +607,22 @@
         element.setAttribute("tabindex", "0");
         element.setAttribute("aria-label", `${track.name}, ${midiNoteName(note.midi)}, start ${note.startTick}/32, duration ${note.durationTicks}/32`);
         element.addEventListener("focus", () => {
-          state.selectedPianoNoteId = note.id;
-          document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.toggle("is-selected", item === element));
+          selectPianoNote(note.id, state.selectedPianoNoteIds.has(note.id));
         });
         const resize = document.createElement("span");
         resize.className = "piano-roll-note-resize";
         element.append(resize);
-        element.addEventListener("pointerdown", (event) => startPianoNoteEdit(event, note, element, event.target === resize));
+        element.addEventListener("pointerdown", (event) => startPianoNoteEdit(event, note, event.target === resize));
         grid.append(element);
       });
   }
 
   function addPianoNoteFromPointer(event) {
     if (event.button !== 0 || !getPianoTrack()) return;
+    if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
+      deleteSelectedPianoNotes(new Set(state.selectedPianoNoteIds));
+      return;
+    }
     const grid = $("#piano-roll-grid");
     const rect = grid.getBoundingClientRect();
     const totalTicks = state.pianoBars * PIANO_TICKS_PER_BAR;
@@ -627,6 +640,11 @@
     };
     state.pianoNotes.push(note);
     state.selectedPianoNoteId = note.id;
+    state.selectedPianoNoteIds = event.shiftKey
+      ? new Set([...state.selectedPianoNoteIds, note.id])
+      : new Set([note.id]);
+    state.selectedArrangementItems.clear();
+    updateArrangementSelection();
     renderPianoRoll();
     updateArrangementLength();
     renderArrangement();
@@ -635,31 +653,62 @@
       .catch((error) => showToast(error.message || "The instrument could not be played."));
   }
 
-  function startPianoNoteEdit(event, note, element, resizing) {
+  function startPianoNoteEdit(event, note, resizing) {
     if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    if (event.shiftKey) {
+      if (event.ctrlKey || event.metaKey) {
+        deleteSelectedPianoNotes(new Set([...state.selectedPianoNoteIds, note.id]));
+      } else {
+        selectPianoNote(note.id, true);
+        renderPianoRoll();
+      }
+      return;
+    }
+    if (!state.selectedPianoNoteIds.has(note.id)) selectPianoNote(note.id);
     state.selectedPianoNoteId = note.id;
-    document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.toggle("is-selected", item === element));
+    const editNotes = !resizing && state.selectedPianoNoteIds.size > 1
+      ? state.pianoNotes.filter((item) => state.selectedPianoNoteIds.has(item.id))
+      : [note];
+    const originals = editNotes.map((item) => ({
+      note: item,
+      startTick: item.startTick,
+      durationTicks: item.durationTicks,
+      midi: item.midi,
+    }));
     const startX = event.clientX;
     const startY = event.clientY;
-    const startTick = note.startTick;
     const durationTicks = note.durationTicks;
-    const midi = note.midi;
     const totalTicks = state.pianoBars * PIANO_TICKS_PER_BAR;
+    const noteElements = new Map(Array.from(document.querySelectorAll(".piano-roll-note"), (item) => [item.dataset.noteId, item]));
     const update = (moveEvent) => {
       const delta = Math.round((moveEvent.clientX - startX) / 16 / state.pianoSnap) * state.pianoSnap;
       if (resizing) {
         note.durationTicks = Math.max(1, Math.min(totalTicks - note.startTick, Math.round((durationTicks + delta) / state.pianoSnap) * state.pianoSnap));
       } else {
-        note.startTick = Math.max(0, Math.min(totalTicks - note.durationTicks, Math.round((startTick + delta) / state.pianoSnap) * state.pianoSnap));
-        note.midi = Math.max(PIANO_BOTTOM_MIDI, Math.min(PIANO_TOP_MIDI, midi - Math.round((moveEvent.clientY - startY) / PIANO_ROW_HEIGHT)));
+        const minStart = Math.min(...originals.map((item) => item.startTick));
+        const maxEnd = Math.max(...originals.map((item) => item.startTick + item.durationTicks));
+        const minPitch = Math.min(...originals.map((item) => item.midi));
+        const maxPitch = Math.max(...originals.map((item) => item.midi));
+        const deltaTicks = Math.max(-minStart, Math.min(totalTicks - maxEnd, delta));
+        const deltaPitch = Math.max(PIANO_BOTTOM_MIDI - minPitch, Math.min(PIANO_TOP_MIDI - maxPitch,
+          -Math.round((moveEvent.clientY - startY) / PIANO_ROW_HEIGHT)));
+        originals.forEach((original) => {
+          original.note.startTick = original.startTick + deltaTicks;
+          original.note.midi = original.midi + deltaPitch;
+        });
       }
-      element.style.left = `${note.startTick * 16 + 1}px`;
-      element.style.top = `${(PIANO_TOP_MIDI - note.midi) * PIANO_ROW_HEIGHT + 1}px`;
-      element.style.width = `${Math.max(14, note.durationTicks * 16 - 2)}px`;
-      element.textContent = midiNoteName(note.midi);
-      element.append(Object.assign(document.createElement("span"), { className: "piano-roll-note-resize" }));
+      originals.forEach((original) => {
+        const target = noteElements.get(original.note.id);
+        if (!target) return;
+        target.style.left = `${original.note.startTick * 16 + 1}px`;
+        target.style.top = `${(PIANO_TOP_MIDI - original.note.midi) * PIANO_ROW_HEIGHT + 1}px`;
+        target.style.width = `${Math.max(14, original.note.durationTicks * 16 - 2)}px`;
+        const resizeHandle = target.querySelector(".piano-roll-note-resize");
+        target.textContent = midiNoteName(original.note.midi);
+        if (resizeHandle) target.append(resizeHandle);
+      });
     };
     const finish = () => {
       document.removeEventListener("pointermove", update);
@@ -677,15 +726,88 @@
     document.addEventListener("pointercancel", finish);
   }
 
-  function deleteSelectedPianoNote() {
-    if (!state.selectedPianoNoteId) return;
-    state.pianoNotes = state.pianoNotes.filter((note) => note.id !== state.selectedPianoNoteId);
-    state.scheduledPianoNotes.delete(state.selectedPianoNoteId);
+  function selectPianoNote(noteId, additive = false) {
+    state.selectedArrangementItems.clear();
+    updateArrangementSelection();
+    state.selectedPianoNoteIds = additive
+      ? new Set([...state.selectedPianoNoteIds, noteId])
+      : new Set([noteId]);
+    state.selectedPianoNoteId = noteId;
+    document.querySelectorAll(".piano-roll-note").forEach((item) =>
+      item.classList.toggle("is-selected", state.selectedPianoNoteIds.has(item.dataset.noteId)));
+  }
+
+  function deleteSelectedPianoNotes(noteIds) {
+    if (!noteIds.size) return false;
+    const existingIds = new Set(state.pianoNotes.filter((note) => noteIds.has(note.id)).map((note) => note.id));
+    if (!existingIds.size) return false;
+    state.selectedArrangementItems.clear();
+    updateArrangementSelection();
+    state.pianoNotes = state.pianoNotes.filter((note) => !existingIds.has(note.id));
+    existingIds.forEach((id) => {
+      [...state.scheduledPianoNotes].filter((key) => key.startsWith(`${id}:`)).forEach((key) => state.scheduledPianoNotes.delete(key));
+    });
+    state.selectedPianoNoteIds.clear();
     state.selectedPianoNoteId = null;
     renderPianoRoll();
     updateArrangementLength();
     renderArrangement();
     saveState();
+    return true;
+  }
+
+  function deleteSelectedPianoNote() {
+    const selected = new Set(state.selectedPianoNoteIds);
+    if (state.selectedPianoNoteId) selected.add(state.selectedPianoNoteId);
+    deleteSelectedPianoNotes(selected);
+  }
+
+  function startPianoSelection(event) {
+    if (event.button !== 0 || event.target.closest(".piano-roll-note")) return;
+    const grid = $("#piano-roll-grid");
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const additive = event.shiftKey;
+    let marquee = null;
+    let moved = false;
+    const update = (moveEvent) => {
+      if (!moved && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) return;
+      moved = true;
+      moveEvent.preventDefault();
+      if (!marquee) {
+        marquee = document.createElement("div");
+        marquee.className = "selection-marquee";
+        grid.append(marquee);
+      }
+      const bounds = grid.getBoundingClientRect();
+      marquee.style.left = `${Math.min(startX, moveEvent.clientX) - bounds.left}px`;
+      marquee.style.top = `${Math.min(startY, moveEvent.clientY) - bounds.top}px`;
+      marquee.style.width = `${Math.abs(moveEvent.clientX - startX)}px`;
+      marquee.style.height = `${Math.abs(moveEvent.clientY - startY)}px`;
+    };
+    const finish = () => {
+      document.removeEventListener("pointermove", update);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+      if (!moved) return;
+      const selection = marquee.getBoundingClientRect();
+      const next = new Set(additive ? state.selectedPianoNoteIds : []);
+      document.querySelectorAll(".piano-roll-note").forEach((note) => {
+        const bounds = note.getBoundingClientRect();
+        if (bounds.left <= selection.right && bounds.right >= selection.left &&
+          bounds.top <= selection.bottom && bounds.bottom >= selection.top) next.add(note.dataset.noteId);
+      });
+      state.selectedPianoNoteIds = next;
+      state.selectedPianoNoteId = [...next].at(-1) || null;
+      state.selectedArrangementItems.clear();
+      updateArrangementSelection();
+      state.suppressPianoGridClick = true;
+      window.setTimeout(() => { state.suppressPianoGridClick = false; }, 0);
+      renderPianoRoll();
+    };
+    document.addEventListener("pointermove", update);
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
   }
 
   function addPatternInstrument(trackId) {
@@ -1222,6 +1344,9 @@
     mel.notes.sort((left, right) => left.startTick - right.startTick);
     state.pianoNotes = mel.notes.map((item) => ({ ...item, trackId: instrument.id }));
     state.selectedPianoNoteId = note.id;
+    state.selectedPianoNoteIds = new Set([note.id]);
+    state.selectedArrangementItems.clear();
+    updateArrangementSelection();
     const loopIndex = Math.floor(elapsedSeconds / (loopTicks / PIANO_TICKS_PER_BAR * secondsPerBar));
     state.scheduledPianoNotes.add(`${note.id}:${loopIndex}`);
     playPianoNote(instrument, state.audioContext.currentTime + 0.01, midi, durationTicks / PIANO_TICKS_PER_BAR * secondsPerBar, note.velocity);
@@ -1703,6 +1828,7 @@
     content.append(melDropLane);
     $("#arrangement-track-count").textContent = String(patternTracks.length + state.melTracks.length + state.arrangementTracks.length).padStart(2, "0");
     updateArrangementCursorMarker();
+    updateArrangementSelection();
   }
 
   function renderInstrumentBrowser() {
@@ -1894,7 +2020,11 @@
     lane.style.setProperty("--bar-width", `${BAR_WIDTH}px`);
     lane.style.setProperty("--beat-width", `${BAR_WIDTH / 4}px`);
     lane.addEventListener("click", (event) => {
-      if (event.target.closest(".audio-clip")) return;
+      if (state.suppressArrangementClick) {
+        state.suppressArrangementClick = false;
+        return;
+      }
+      if (event.target.closest("[data-selectable-type]")) return;
       setArrangementCursor(barAtPointer(event, lane));
     });
     lane.addEventListener("dragover", (event) => {
@@ -1987,6 +2117,7 @@
     element.className = "audio-clip";
     element.draggable = true;
     element.dataset.clipId = clip.id;
+    element.dataset.selectableType = "audio";
     element.style.setProperty("--clip-color", track.color);
     element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
     element.style.width = `${Math.max(64, clip.buffer.duration / (240 / state.bpm) * BAR_WIDTH - 8)}px`;
@@ -2020,11 +2151,14 @@
       removeArrangementClip(track.id, clip.id);
     });
     element.addEventListener("dragstart", (event) => {
+      if (!(event.shiftKey && (event.ctrlKey || event.metaKey))) selectArrangementItem("audio", clip.id, event);
       event.dataTransfer?.setData("application/x-pulsegrid-audio-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
     });
     element.addEventListener("click", (event) => {
       if (event.target.closest(".clip-remove")) return;
+      event.stopPropagation();
+      if (!selectArrangementItem("audio", clip.id, event)) return;
       setArrangementCursor(clip.startBar);
     });
     element.append(waveform, name, remove);
@@ -2039,6 +2173,7 @@
     element.className = "mel-arrangement-clip";
     element.draggable = true;
     element.dataset.clipId = clip.id;
+    element.dataset.selectableType = "mel";
     element.style.setProperty("--clip-color", track.color);
     element.style.left = `${clip.startBar * BAR_WIDTH + 4}px`;
     element.style.width = `${Math.max(28, bars * BAR_WIDTH - 8)}px`;
@@ -2055,11 +2190,14 @@
       removeMelClip(track.id, clip.id);
     });
     element.addEventListener("dragstart", (event) => {
+      if (!(event.shiftKey && (event.ctrlKey || event.metaKey))) selectArrangementItem("mel", clip.id, event);
       event.dataTransfer?.setData("application/x-pulsegrid-mel-clip", JSON.stringify({ clipId: clip.id, sourceTrackId: track.id }));
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
     });
     element.addEventListener("click", (event) => {
       if (event.target.closest(".mel-clip-remove")) return;
+      event.stopPropagation();
+      if (!selectArrangementItem("mel", clip.id, event)) return;
       setArrangementCursor(clip.startBar);
     });
     element.append(remove);
@@ -2069,6 +2207,8 @@
   function createPatternClip(clip) {
     const element = document.createElement("div");
     element.className = "drum-arrangement-clip";
+    element.dataset.clipId = clip.id;
+    element.dataset.selectableType = "pattern";
     const pattern = getPattern(clip.patternId) || getPattern();
     const steps = pattern?.steps || state.steps;
     const patternName = pattern?.name || "Drum pattern";
@@ -2134,11 +2274,15 @@
       removePatternClip(clip.id);
     });
     element.addEventListener("dragstart", (event) => {
+      if (!(event.shiftKey && (event.ctrlKey || event.metaKey))) selectArrangementItem("pattern", clip.id, event);
       event.dataTransfer?.setData("application/x-pulsegrid-pattern-clip", JSON.stringify({ clipId: clip.id }));
       if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
     });
     element.addEventListener("click", (event) => {
-      if (!event.target.closest(".pattern-clip-remove, .pattern-clip-repeat-handle")) setArrangementCursor(clip.startBar);
+      if (event.target.closest(".pattern-clip-remove, .pattern-clip-repeat-handle")) return;
+      event.stopPropagation();
+      if (!selectArrangementItem("pattern", clip.id, event)) return;
+      setArrangementCursor(clip.startBar);
     });
     element.append(icon, text, repeatHandle, remove);
     return element;
@@ -2157,9 +2301,129 @@
     saveState();
   }
 
+  function arrangementSelectionKey(type, id) {
+    return `${type}:${id}`;
+  }
+
+  function updateArrangementSelection() {
+    document.querySelectorAll("[data-selectable-type][data-clip-id]").forEach((item) => {
+      item.classList.toggle("is-selected", state.selectedArrangementItems.has(
+        arrangementSelectionKey(item.dataset.selectableType, item.dataset.clipId)));
+    });
+  }
+
+  function selectArrangementItem(type, id, event) {
+    const key = arrangementSelectionKey(type, id);
+    if (event.shiftKey && (event.ctrlKey || event.metaKey)) {
+      state.selectedPianoNoteIds.clear();
+      state.selectedPianoNoteId = null;
+      document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.remove("is-selected"));
+      deleteSelectedArrangementItems(new Set([...state.selectedArrangementItems, key]));
+      return false;
+    }
+    state.selectedPianoNoteIds.clear();
+    state.selectedPianoNoteId = null;
+    document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.remove("is-selected"));
+    if (event.shiftKey) state.selectedArrangementItems.add(key);
+    else state.selectedArrangementItems = new Set([key]);
+    updateArrangementSelection();
+    return true;
+  }
+
+  function deleteSelectedArrangementItems(selection = state.selectedArrangementItems) {
+    let deleted = false;
+    const has = (type, id) => selection.has(arrangementSelectionKey(type, id));
+    const nextPatterns = state.patternClips.filter((clip) => {
+      const keep = !has("pattern", clip.id);
+      deleted ||= !keep;
+      return keep;
+    });
+    state.patternClips = nextPatterns;
+    state.melTracks.forEach((track) => {
+      track.clips = track.clips.filter((clip) => {
+        const keep = !has("mel", clip.id);
+        deleted ||= !keep;
+        return keep;
+      });
+    });
+    state.melTracks = state.melTracks.filter((track) => track.clips.length > 0);
+    state.arrangementTracks.forEach((track) => {
+      track.clips = track.clips.filter((clip) => {
+        const keep = !has("audio", clip.id);
+        if (!keep) {
+          deleted = true;
+          deletePersistedClip(clip.id);
+        }
+        return keep;
+      });
+    });
+    state.arrangementTracks = state.arrangementTracks.filter((track) => track.clips.length > 0);
+    state.selectedArrangementItems.clear();
+    if (!deleted) return false;
+    updateArrangementLength();
+    renderArrangement();
+    saveState();
+    return true;
+  }
+
+  function startArrangementSelection(event) {
+    if (event.button !== 0 || !event.target.closest(".timeline-lane") ||
+      event.target.closest("[data-selectable-type]")) return;
+    const content = $("#timeline-content");
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const additive = event.shiftKey;
+    let marquee = null;
+    let moved = false;
+    const update = (moveEvent) => {
+      if (!moved && Math.hypot(moveEvent.clientX - startX, moveEvent.clientY - startY) < 4) return;
+      moved = true;
+      moveEvent.preventDefault();
+      if (!marquee) {
+        marquee = document.createElement("div");
+        marquee.className = "selection-marquee";
+        content.append(marquee);
+      }
+      const bounds = content.getBoundingClientRect();
+      marquee.style.left = `${Math.min(startX, moveEvent.clientX) - bounds.left}px`;
+      marquee.style.top = `${Math.min(startY, moveEvent.clientY) - bounds.top}px`;
+      marquee.style.width = `${Math.abs(moveEvent.clientX - startX)}px`;
+      marquee.style.height = `${Math.abs(moveEvent.clientY - startY)}px`;
+    };
+    const finish = () => {
+      document.removeEventListener("pointermove", update);
+      document.removeEventListener("pointerup", finish);
+      document.removeEventListener("pointercancel", finish);
+      if (!moved) return;
+      const selection = marquee.getBoundingClientRect();
+      const next = new Set(additive ? state.selectedArrangementItems : []);
+      document.querySelectorAll("[data-selectable-type][data-clip-id]").forEach((item) => {
+        const bounds = item.getBoundingClientRect();
+        if (bounds.left <= selection.right && bounds.right >= selection.left &&
+          bounds.top <= selection.bottom && bounds.bottom >= selection.top) {
+          next.add(arrangementSelectionKey(item.dataset.selectableType, item.dataset.clipId));
+        }
+      });
+      state.selectedArrangementItems = next;
+      state.selectedPianoNoteIds.clear();
+      state.selectedPianoNoteId = null;
+      document.querySelectorAll(".piano-roll-note").forEach((item) => item.classList.remove("is-selected"));
+      state.suppressArrangementClick = true;
+      window.setTimeout(() => { state.suppressArrangementClick = false; }, 0);
+      updateArrangementSelection();
+    };
+    document.addEventListener("pointermove", update);
+    document.addEventListener("pointerup", finish);
+    document.addEventListener("pointercancel", finish);
+  }
+
   function setWorkspaceView(view, force = false) {
     if (view === state.view && !force && !state.workspaceHidden) return;
     if (state.isPlaying) stopPlayback();
+    if (view !== "piano-roll") {
+      state.selectedPianoNoteIds.clear();
+      state.selectedPianoNoteId = null;
+    }
     state.view = view;
     state.workspaceHidden = false;
     const showSequencer = view === "sequencer";
@@ -2333,6 +2597,7 @@
       const transaction = database.transaction("recordings", "readwrite");
       transaction.objectStore("recordings").put({
         id: clip.id,
+        projectId: state.projectId,
         trackId: track.id,
         trackName: track.name,
         color: track.color,
@@ -2353,6 +2618,7 @@
       const transaction = database.transaction("recordings", "readwrite");
       transaction.objectStore("recordings").put({
         id: `drum-sample:${track.id}`,
+        projectId: state.projectId,
         recordType: "drum-sample",
         trackId: track.id,
         trackName: track.name,
@@ -2406,9 +2672,11 @@
         request.onerror = () => reject(request.error || new Error("Could not read saved recordings"));
         transaction.oncomplete = () => database.close();
       });
-      if (!records.length) return;
+      const projectRecords = records.filter((record) =>
+        record.projectId === state.projectId || (!record.projectId && state.projectId === "default"));
+      if (!projectRecords.length) return;
       initializeAudio();
-      const sampleRecords = records.filter((record) => record.recordType === "drum-sample");
+      const sampleRecords = projectRecords.filter((record) => record.recordType === "drum-sample");
       for (const record of sampleRecords) {
         try {
           const buffer = await state.audioContext.decodeAudioData(await record.blob.arrayBuffer());
@@ -2447,7 +2715,7 @@
         ensureSequencerTrackAudio(layer);
       });
 
-      const clipRecords = records.filter((record) => record.recordType !== "drum-sample");
+      const clipRecords = projectRecords.filter((record) => record.recordType !== "drum-sample");
       for (const record of clipRecords) {
         let track = state.arrangementTracks.find((item) => item.id === record.trackId);
         if (!track) {
@@ -2959,13 +3227,57 @@
     state.toastTimer = window.setTimeout(() => toast.classList.remove("is-visible"), 2600);
   }
 
-  function saveState() {
+  function getProjectStorageKey(projectId) {
+    return `${PROJECT_STORAGE_PREFIX}${projectId}`;
+  }
+
+  function writeProjectCatalog() {
+    window.localStorage.setItem(PROJECTS_KEY, JSON.stringify({
+      activeProjectId: state.projectId,
+      projects: state.projects,
+    }));
+  }
+
+  function updateProjectNameLabel() {
+    $("#project-name").firstChild.textContent = `${state.projectName} `;
+  }
+
+  function initializeProjects() {
+    try {
+      const savedCatalog = JSON.parse(window.localStorage.getItem(PROJECTS_KEY) || "null");
+      const projects = Array.isArray(savedCatalog?.projects)
+        ? savedCatalog.projects.filter((project) => typeof project?.id === "string" && typeof project.name === "string")
+        : [];
+      if (projects.length) {
+        state.projects = projects;
+        state.projectId = projects.some((project) => project.id === savedCatalog.activeProjectId)
+          ? savedCatalog.activeProjectId
+          : projects[0].id;
+      } else {
+        const name = window.localStorage.getItem(`${STORAGE_KEY}-name`)?.trim() || "Untitled session";
+        const project = { id: "default", name, updatedAt: Date.now() };
+        const oldSnapshot = window.localStorage.getItem(STORAGE_KEY);
+        if (oldSnapshot) window.localStorage.setItem(getProjectStorageKey(project.id), oldSnapshot);
+        state.projects = [project];
+        state.projectId = project.id;
+        writeProjectCatalog();
+      }
+      const activeProject = state.projects.find((project) => project.id === state.projectId);
+      state.projectName = activeProject?.name || "Untitled session";
+      updateProjectNameLabel();
+    } catch (error) {
+      state.projects = [{ id: "default", name: "Untitled session", updatedAt: 0 }];
+      state.projectId = "default";
+      state.projectName = "Untitled session";
+      updateProjectNameLabel();
+      showToast(`Project storage is unavailable: ${error.message || "could not load projects"}`);
+    }
+  }
+
+  function createStateSnapshot() {
     captureCurrentPattern();
     captureCurrentMel();
-    const saveDot = $(".save-dot");
-    $("#save-state").textContent = "Saving…";
-    saveDot.style.background = "#c8a95a";
-    const snapshot = {
+    return {
       bpm: state.bpm,
       swing: state.swing,
       steps: state.steps,
@@ -3025,22 +3337,152 @@
       trackViewHidden: state.trackViewHidden,
       view: state.view,
     };
+  }
+
+  function persistStateSnapshot(snapshot, projectId = state.projectId) {
+    try {
+      window.localStorage.setItem(getProjectStorageKey(projectId), JSON.stringify(snapshot));
+    } catch {
+      $("#save-state").textContent = "Session-only changes";
+      $(".save-dot").style.background = "#d3a34b";
+      return false;
+    }
+    const project = state.projects.find((item) => item.id === projectId);
+    if (project) {
+      project.updatedAt = Date.now();
+      try {
+        writeProjectCatalog();
+      } catch {
+        showToast("Project saved, but its saved-project list could not be updated.");
+      }
+    }
+    $("#save-state").textContent = "All changes saved";
+    $(".save-dot").style.background = "#7f9d43";
+    return true;
+  }
+
+  function flushSaveState() {
+    window.clearTimeout(saveState.timeout);
+    saveState.timeout = null;
+    return persistStateSnapshot(createStateSnapshot(), state.projectId);
+  }
+
+  function saveState() {
+    const saveDot = $(".save-dot");
+    $("#save-state").textContent = "Saving…";
+    saveDot.style.background = "#c8a95a";
+    const snapshot = createStateSnapshot();
+    const projectId = state.projectId;
     window.clearTimeout(saveState.timeout);
     saveState.timeout = window.setTimeout(() => {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-        $("#save-state").textContent = "All changes saved";
-        saveDot.style.background = "#7f9d43";
-      } catch {
-        $("#save-state").textContent = "Session-only changes";
-        saveDot.style.background = "#d3a34b";
-      }
+      persistStateSnapshot(snapshot, projectId);
     }, 250);
+  }
+
+  function renderProjectList() {
+    const list = $("#project-list");
+    list.replaceChildren();
+    state.projects.forEach((project) => {
+      const button = document.createElement("button");
+      button.className = `project-list-item${project.id === state.projectId ? " is-current" : ""}`;
+      button.type = "button";
+      button.disabled = project.id === state.projectId;
+      const name = document.createElement("span");
+      name.className = "project-list-name";
+      name.textContent = project.name;
+      const detail = document.createElement("span");
+      detail.className = "project-list-detail";
+      detail.textContent = project.id === state.projectId
+        ? "CURRENT PROJECT"
+        : project.updatedAt ? `SAVED ${new Date(project.updatedAt).toLocaleDateString()}` : "NOT SAVED YET";
+      button.append(name, detail);
+      button.addEventListener("click", () => switchProject(project.id));
+      list.append(button);
+    });
+  }
+
+  function switchProject(projectId) {
+    if (projectId === state.projectId || !state.projects.some((project) => project.id === projectId)) return;
+    if (state.mediaRecorder?.state === "recording") {
+      showToast("Stop audio recording before switching projects.");
+      return;
+    }
+    if (!flushSaveState()) {
+      showToast("Could not save this project; switching was cancelled.");
+      return;
+    }
+    if (state.isPlaying) stopPlayback();
+    const previousProjectId = state.projectId;
+    state.projectId = projectId;
+    try {
+      writeProjectCatalog();
+      window.location.reload();
+    } catch (error) {
+      state.projectId = previousProjectId;
+      showToast(`Could not switch projects: ${error.message || "storage is unavailable"}`);
+    }
+  }
+
+  function createProject() {
+    if (state.mediaRecorder?.state === "recording") {
+      showToast("Stop audio recording before creating a project.");
+      return;
+    }
+    if (!flushSaveState()) {
+      showToast("Could not save this project; a new project was not created.");
+      return;
+    }
+    const project = {
+      id: makeId(),
+      name: `New Project ${state.projects.length + 1}`,
+      updatedAt: 0,
+    };
+    const previousProjectId = state.projectId;
+    state.projects.unshift(project);
+    state.projectId = project.id;
+    try {
+      writeProjectCatalog();
+      window.location.reload();
+    } catch (error) {
+      state.projects = state.projects.filter((item) => item.id !== project.id);
+      state.projectId = previousProjectId;
+      showToast(`Could not create project: ${error.message || "storage is unavailable"}`);
+    }
+  }
+
+  function renameProject() {
+    const name = window.prompt("Rename project", state.projectName);
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+    const project = state.projects.find((item) => item.id === state.projectId);
+    if (!project) return;
+    const previousName = project.name;
+    project.name = trimmed;
+    state.projectName = trimmed;
+    updateProjectNameLabel();
+    try {
+      writeProjectCatalog();
+      renderProjectList();
+    } catch (error) {
+      project.name = previousName;
+      state.projectName = previousName;
+      updateProjectNameLabel();
+      showToast(`Could not rename project: ${error.message || "storage is unavailable"}`);
+    }
+  }
+
+  function saveProjectNow() {
+    if (flushSaveState()) {
+      renderProjectList();
+      showToast(`${state.projectName} saved`);
+    } else {
+      showToast("Could not save this project.");
+    }
   }
 
   function restoreState() {
     try {
-      const saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || "null");
+      const saved = JSON.parse(window.localStorage.getItem(getProjectStorageKey(state.projectId)) || "null");
       if (!saved || typeof saved !== "object") return;
       if (Number.isFinite(saved.bpm)) state.bpm = Math.max(60, Math.min(180, Math.round(saved.bpm)));
       if (Number.isFinite(saved.swing)) state.swing = Math.max(0, Math.min(45, Math.round(saved.swing)));
@@ -3236,7 +3678,7 @@
       }
       if (typeof saved.selectedMelId === "string") state.selectedMelId = saved.selectedMelId;
     } catch {
-      try { window.localStorage.removeItem(STORAGE_KEY); } catch { /* Storage may be disabled. */ }
+      try { window.localStorage.removeItem(getProjectStorageKey(state.projectId)); } catch { /* Storage may be disabled. */ }
     }
   }
 
@@ -3566,6 +4008,8 @@
       if (state.keyboardRecording?.mode === "piano-roll") stopPlayback();
       state.selectedPianoTrackId = event.target.value;
       state.pianoNotes = state.pianoNotes.map((note) => ({ ...note, trackId: state.selectedPianoTrackId }));
+      state.selectedPianoNoteIds.clear();
+      state.selectedPianoNoteId = null;
       renderPianoRoll();
       saveState();
     });
@@ -3589,9 +4033,11 @@
       }
       if (!event.target.closest(".piano-roll-note")) addPianoNoteFromPointer(event);
     });
+    $("#piano-roll-grid").addEventListener("pointerdown", startPianoSelection);
     $("#clear-piano-roll-button").addEventListener("click", () => {
       state.pianoNotes = [];
       state.selectedPianoNoteId = null;
+      state.selectedPianoNoteIds.clear();
       state.scheduledPianoNotes.clear();
       renderPianoRoll();
       updateArrangementLength();
@@ -3601,6 +4047,13 @@
     $("#timeline-scroll").addEventListener("scroll", (event) => {
       $("#arrangement-track-labels").scrollTop = event.currentTarget.scrollTop;
     });
+    $("#timeline-content").addEventListener("pointerdown", startArrangementSelection);
+    $("#timeline-content").addEventListener("click", (event) => {
+      if (!state.suppressArrangementClick) return;
+      state.suppressArrangementClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
     $("#sequencer-pattern-select").addEventListener("change", (event) => selectPattern(event.target.value));
     $("#grid-resolution-select").addEventListener("change", (event) => {
       setPatternGridResolution(event.target.value);
@@ -3670,12 +4123,13 @@
       showToast("Arrangement cleared");
     });
     $("#project-name").addEventListener("click", () => {
-      const title = window.prompt("Name this session", $("#project-name").firstChild.textContent.trim());
-      if (title?.trim()) {
-        $("#project-name").firstChild.textContent = title.trim();
-        try { window.localStorage.setItem(`${STORAGE_KEY}-name`, title.trim()); } catch { /* Storage may be disabled. */ }
-      }
+      renderProjectList();
+      $("#project-dialog").showModal();
     });
+    $("#project-dialog-close").addEventListener("click", () => $("#project-dialog").close());
+    $("#save-project-button").addEventListener("click", saveProjectNow);
+    $("#rename-project-button").addEventListener("click", renameProject);
+    $("#new-project-button").addEventListener("click", createProject);
     sampleInput.addEventListener("change", () => loadSample(sampleInput.files?.[0]));
     $("#import-drum-sounds-button").addEventListener("click", () => drumSamplesInput.click());
     drumSamplesInput.addEventListener("change", () => importDrumSamples(Array.from(drumSamplesInput.files || [])));
@@ -3702,6 +4156,8 @@
       state.pianoNoteLength = 2;
       state.selectedPianoTrackId = "piano-grand";
       state.selectedPianoNoteId = null;
+      state.selectedPianoNoteIds.clear();
+      state.selectedArrangementItems.clear();
       state.arrangementBars = 32;
       state.arrangementCursor = 0;
       state.workspaceRatio = 50;
@@ -3727,16 +4183,22 @@
       const target = event.target;
       const isTyping = target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
       const isButton = target instanceof HTMLElement && target.tagName === "BUTTON";
-      if (!isTyping && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !$("#help-dialog").open) {
+      const dialogOpen = $("#help-dialog").open || $("#project-dialog").open || $("#source-browser-dialog").open;
+      if (!isTyping && !event.repeat && !event.ctrlKey && !event.metaKey && !event.altKey && !dialogOpen) {
         if (recordStepKeyboardHit(event) || recordPianoKeyboardNote(event)) return;
       }
-      if (event.code === "Space" && !isTyping && !isButton && !$("#help-dialog").open) {
+      if (event.code === "Space" && !isTyping && !isButton && !dialogOpen) {
         event.preventDefault();
         state.isPlaying ? stopPlayback() : startPlayback();
       }
-      if (state.view === "piano-roll" && !isTyping && (event.key === "Delete" || event.key === "Backspace")) {
-        event.preventDefault();
-        deleteSelectedPianoNote();
+      if (!isTyping && !dialogOpen && (event.key === "Delete" || event.key === "Backspace")) {
+        if (state.selectedArrangementItems.size) {
+          event.preventDefault();
+          deleteSelectedArrangementItems();
+        } else if (state.selectedPianoNoteIds.size || state.selectedPianoNoteId) {
+          event.preventDefault();
+          deleteSelectedPianoNote();
+        }
       }
       if (event.key === "Escape" && $("#help-dialog").open) $("#help-dialog").close();
     });
@@ -3747,16 +4209,13 @@
     const initialPattern = makePatternSnapshot(makeId(), "Pattern 1");
     state.patterns = [initialPattern];
     state.selectedPatternId = initialPattern.id;
+    initializeProjects();
     restoreState();
     ensureMels();
     tempoValue.textContent = String(state.bpm);
     swingSlider.value = String(state.swing);
     $("#swing-value").textContent = `${state.swing}%`;
     swingSlider.style.setProperty("--range-progress", `${state.swing / 45 * 100}%`);
-    try {
-      const savedName = window.localStorage.getItem(`${STORAGE_KEY}-name`);
-      if (savedName) $("#project-name").firstChild.textContent = savedName;
-    } catch { /* Storage may be disabled. */ }
     renderHeader();
     renderPresets();
     setLength(state.steps);

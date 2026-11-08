@@ -21,7 +21,7 @@
           <span>pulse<span class="brand-light">grid</span></span>
         </a>
         <span class="topbar-divider"></span>
-        <button class="project-name" id="project-name" type="button" title="Rename project">
+        <button class="project-name" id="project-name" type="button" title="Open project menu" aria-haspopup="dialog">
           Untitled session <span aria-hidden="true">⌄</span>
         </button>
         <div class="save-state"><span class="save-dot"></span><span id="save-state">All changes saved</span></div>
@@ -268,7 +268,7 @@
                           <div class="piano-roll-grid" id="piano-roll-grid" aria-label="Piano roll note grid"></div>
                         </div>
                       </div>
-                      <div class="piano-roll-footer">Click to add · Drag to move/resize · Delete removes selected note · Drum kits use GM keys B1-A5 for kicks, snares, toms, hats, cymbals and percussion</div>
+                      <div class="piano-roll-footer">Click to add · Drag notes to move/resize · Shift-click to add/select · Drag empty space to select · Delete removes selected notes · Drum kits use GM keys B1-A5</div>
                     </section>
                   </div>
                 </section>
@@ -300,7 +300,7 @@
             </div>
             <div class="arrangement-footer">
               <span><span class="legend-swatch"></span>DRUM PATTERN <span class="audio-legend"></span>AUDIO CLIP <span class="mel-legend"></span>MEL</span>
-              <span><kbd>CLICK</kbd> add <span class="hint-divider">·</span> <kbd>DRAG</kbd> move clips <span class="hint-divider">·</span> click timeline to set cursor</span>
+              <span><kbd>SHIFT-CLICK</kbd> multi-select <span class="hint-divider">·</span> drag empty lane to select <span class="hint-divider">·</span> <kbd>DELETE</kbd> remove</span>
             </div>
           </div>
         </section>
@@ -330,8 +330,23 @@
           <p>Use the <strong>+</strong> next to a drum to replace its sample, or open <strong>Browser → Import drum sounds</strong> to add multiple samples as new sequencer tracks.</p>
           <p>Use the top-bar <strong>Step</strong> and <strong>Piano Roll</strong> buttons to open either editor in the workspace. In the piano roll, choose an instrument, click to add notes, and drag notes or their edges to edit them.</p>
           <p>Open <strong>Arrangement</strong> to add vocal takes or loops on separate tracks. Drag clips to line them up with your beat; playback combines all tracks at the project tempo.</p>
-          <p>Patterns and imported recordings are saved in this browser. Export a full arrangement as WAV or download the drum pattern as JSON.</p>
+          <p>Projects save in this browser. Use the project menu by the project name to save, rename, create, or switch projects. Export a full arrangement as WAV or download the drum pattern as JSON.</p>
         </form>
+      </dialog>
+      <dialog class="project-dialog" id="project-dialog" aria-label="Projects">
+        <div class="project-dialog-heading">
+          <div>
+            <div class="eyebrow">PULSEGRID</div>
+            <h2>Projects</h2>
+          </div>
+          <button class="dialog-close" id="project-dialog-close" type="button" aria-label="Close projects">×</button>
+        </div>
+        <div class="project-dialog-actions">
+          <button class="quiet-button" id="save-project-button" type="button">Save now</button>
+          <button class="quiet-button" id="rename-project-button" type="button">Rename</button>
+          <button class="quiet-button" id="new-project-button" type="button">＋ New project</button>
+        </div>
+        <div class="project-list" id="project-list" aria-label="Saved projects"></div>
       </dialog>
     </div>
     <script src="app.js"></script>
